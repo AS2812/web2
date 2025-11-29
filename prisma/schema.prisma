@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model Author {
+  authorId Int     @id(map: "PK__AUTHOR__86516BCF2867B50A") @default(autoincrement()) @map("author_id")
+  name     String  @db.NVarChar(100)
+  books    Wrote[]
+
+  @@map("AUTHOR")
+}
+
+model Publisher {
+  publisherId Int     @id(map: "PK__PUBLISHE__3263F29D01DF515F") @default(autoincrement()) @map("publisher_id")
+  name        String  @db.NVarChar(100)
+  address     String? @db.NVarChar(255)
+  books       Book[]
+
+  @@map("PUBLISHER")
+}
+
+model Book {
+  isbn            String        @id(map: "PK__BOOK__447D36EB70035383") @map("ISBN") @db.NVarChar(20)
+  title           String        @db.NVarChar(255)
+  edition         String?       @db.NVarChar(50)
+  category        String?       @db.NVarChar(100)
+  publicationDate DateTime?     @map("publication_date") @db.Date
+  publisherId     Int?          @map("publisher_id")
+  copiesAvailable Int           @default(1, map: "DF__BOOK__copies_ava__4E88ABD4") @map("copies_available")
+  totalCopies     Int           @default(1, map: "DF__BOOK__total_copi__4F7CD00D") @map("total_copies")
+  publisher       Publisher?    @relation(fields: [publisherId], references: [publisherId], onDelete: NoAction, onUpdate: NoAction, map: "FK_BOOK_PUBLISHER")
+  loans           Loan[]
+  reservations    Reservation[]
+  authors         Wrote[]
+
+  @@map("BOOK")
+}
+
+model Wrote {
+  authorId Int    @map("author_id")
+  isbn     String @map("ISBN") @db.NVarChar(20)
+  author   Author @relation(fields: [authorId], references: [authorId], onUpdate: NoAction, map: "FK_WROTE_AUTHOR")
+  book     Book   @relation(fields: [isbn], references: [isbn], onUpdate: NoAction, map: "FK_WROTE_BOOK")
+
+  @@id([authorId, isbn], map: "PK__WROTE__2216B8A12F0A9DB1")
+  @@map("WROTE")
+}
+
+model User {
+  userId       Int        @id(map: "PK__USER__B9BE370FE3B292A4") @default(autoincrement()) @map("user_id")
+  username     String     @unique(map: "UQ__USER__F3DBC572336E698C") @db.NVarChar(50)
+  passwordHash String     @map("password_hash") @db.NVarChar(255)
+  email        String     @unique(map: "UQ__USER__AB6E6164E452CAF4") @db.NVarChar(100)
+  userRole     String     @map("user_role") @db.NVarChar(50)
+  admin        AdminUser?
+  member       Member?
+
+  @@map("USER")
+}
+
+model Member {
+  memberId             Int           @id(map: "PK__MEMBER__B29B8534A00CE978") @default(autoincrement()) @map("member_id")
+  userId               Int           @unique(map: "UQ__MEMBER__B9BE370E7067DBD1") @map("user_id")
+  memberNumber         String?       @unique(map: "UQ__MEMBER__6B3F928124C6577A") @map("member_number") @db.NVarChar(50)
+  name                 String        @db.NVarChar(100)
+  address              String?       @db.NVarChar(255)
+  membershipExpiryDate DateTime?     @map("membership_expiry_date") @db.Date
+  fines                Fine[]
+  loans                Loan[]
+  user                 User          @relation(fields: [userId], references: [userId], onUpdate: NoAction, map: "FK_MEMBER_USER")
+  reservations         Reservation[]
+
+  @@map("MEMBER")
+}
+
+model AdminUser {
+  adminId Int  @id(map: "PK__ADMIN_US__43AA4141433F8F1A") @default(autoincrement()) @map("admin_id")
+  userId  Int  @unique(map: "UQ__ADMIN_US__B9BE370ED29CB688") @map("user_id")
+  user    User @relation(fields: [userId], references: [userId], onUpdate: NoAction, map: "FK_ADMIN_USER_USER")
+
+  @@map("ADMIN_USER")
+}
+
+model Loan {
+  loanId     Int       @id(map: "PK__LOAN__A1F79554DE100641") @default(autoincrement()) @map("loan_id")
+  isbn       String    @map("ISBN") @db.NVarChar(20)
+  memberId   Int       @map("member_id")
+  borrowDate DateTime  @map("borrow_date") @db.Date
+  dueDate    DateTime  @map("due_date") @db.Date
+  returnDate DateTime? @map("return_date") @db.Date
+  fine       Fine?
+  book       Book      @relation(fields: [isbn], references: [isbn], onUpdate: NoAction, map: "FK_LOAN_BOOK")
+  member     Member    @relation(fields: [memberId], references: [memberId], onUpdate: NoAction, map: "FK_LOAN_MEMBER")
+
+  @@map("LOAN")
+}
+
+model Fine {
+  fineId        Int      @id(map: "PK__FINE__F3C688D1B2267BB6") @default(autoincrement()) @map("fine_id")
+  loanId        Int      @unique(map: "UQ__FINE__A1F795556F190024") @map("loan_id")
+  memberId      Int      @map("member_id")
+  fineAmount    Decimal  @map("fine_amount") @db.Decimal(10, 2)
+  fineDate      DateTime @map("fine_date") @db.Date
+  paymentStatus String?  @default("Pending", map: "DF__FINE__payment_st__693CA210") @map("payment_status") @db.NVarChar(50)
+  loan          Loan     @relation(fields: [loanId], references: [loanId], onUpdate: NoAction, map: "FK_FINE_LOAN")
+  member        Member   @relation(fields: [memberId], references: [memberId], onUpdate: NoAction, map: "FK_FINE_MEMBER")
+
+  @@map("FINE")
+}
+
+model Reservation {
+  reservationId   Int      @id(map: "PK__RESERVAT__31384C2945C8AF90") @default(autoincrement()) @map("reservation_id")
+  isbn            String   @map("ISBN") @db.NVarChar(20)
+  memberId        Int      @map("member_id")
+  reservationDate DateTime @map("reservation_date") @db.DateTime
+  status          String?  @default("Pending", map: "DF__RESERVATI__statu__6FE99F9F") @map("status") @db.NVarChar(50)
+  book            Book     @relation(fields: [isbn], references: [isbn], onUpdate: NoAction, map: "FK_RESERVATION_BOOK")
+  member          Member   @relation(fields: [memberId], references: [memberId], onUpdate: NoAction, map: "FK_RESERVATION_MEMBER")
+
+  @@unique([isbn, memberId], map: "UC_Active_Reservation")
+  @@map("RESERVATION")
+}

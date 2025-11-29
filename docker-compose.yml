@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: library-db
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "${SA_PASSWORD:-YourStrong!Passw0rd}"
+      MSSQL_PID: "Express"
+    ports:
+      - "1433:1433"
+    volumes:
+      - db_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "${SA_PASSWORD:-YourStrong!Passw0rd}", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  db-init:
+    image: mcr.microsoft.com/mssql-tools
+    container_name: library-db-init
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SA_PASSWORD: "${SA_PASSWORD:-YourStrong!Passw0rd}"
+    volumes:
+      - ./DB.sql:/scripts/DB.sql
+      - ./scripts/init-db.sh:/scripts/init-db.sh
+    entrypoint: ["/bin/bash", "-c", "chmod +x /scripts/init-db.sh && /scripts/init-db.sh"]
+
+  api:
+    build: .
+    container_name: library-api
+    environment:
+      PORT: "3000"
+      DATABASE_URL: "${DATABASE_URL:-sqlserver://sa:YourStrong!Passw0rd@db:1433;database=LibraryDB;trustServerCertificate=true}"
+      JWT_SECRET: "${JWT_SECRET:-supersecret}"
+      JWT_EXPIRY: "${JWT_EXPIRY:-1h}"
+      BCRYPT_ROUNDS: "${BCRYPT_ROUNDS:-10}"
+      NODE_ENV: "development"
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: ["npm", "run", "dev"]
+
+volumes:
+  db_data:
