@@ -186,6 +186,15 @@ body { margin: 0; background: var(--bg); color: #1f2735; }
 
 .hidden { display: none !important; }
 
+.status-bar {
+  background: #e8f1ff;
+  color: #1f2735;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { position: fixed; inset: 70px 0 auto 0; height: auto; max-height: 70vh; z-index: 150; transform: translateY(-120%); transition: transform .25s ease; }

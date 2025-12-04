@@ -69,23 +69,29 @@ async function api(path, options = {}) {
 }
 
 // Auth handlers
+function showMessage(msg) {
+  const bar = qs('#status-bar');
+  if (!bar) return console.log(msg);
+  bar.textContent = msg;
+  bar.classList.remove('hidden');
+  setTimeout(() => bar.classList.add('hidden'), 3000);
+}
+
 async function handleLogin(e) {
   e.preventDefault();
   const form = new FormData(e.target);
-  const role = form.get('role');
   try {
     const resp = await api('/auth/login', {
       method: 'POST',
       body: JSON.stringify({
         username: form.get('username').trim(),
-        password: form.get('password'),
-        role
+        password: form.get('password')
       })
     });
     setToken(resp.token);
     await bootstrapAfterAuth();
   } catch (err) {
-    alert(err.message);
+    showMessage(err.message);
   }
 }
 
@@ -93,7 +99,7 @@ async function handleRegister(e) {
   e.preventDefault();
   const form = new FormData(e.target);
   if (form.get('password') !== form.get('confirmPassword')) {
-    alert('Passwords do not match');
+    showMessage('Passwords do not match');
     return;
   }
   try {
@@ -109,7 +115,7 @@ async function handleRegister(e) {
     setToken(resp.token);
     await bootstrapAfterAuth();
   } catch (err) {
-    alert(err.message);
+    showMessage(err.message);
   }
 }
 
@@ -519,6 +525,7 @@ function renderAdminFines() {
 
 function drawAdminCharts() {
   if (state.role !== 'Admin' || !state.admin.stats) return;
+  if (typeof Chart === 'undefined') return;
   const ctxBar = qs('#admin-bar');
   const ctxPie = qs('#admin-pie');
   const s = state.admin.stats;
@@ -542,6 +549,7 @@ function drawAdminCharts() {
 
 function drawMemberChart(stats) {
   if (!stats) return;
+  if (typeof Chart === 'undefined') return;
   const ctx = qs('#member-chart');
   const labels = (stats.categoryDistribution || []).map((c) => c.label || 'Category');
   const values = (stats.categoryDistribution || []).map((c) => Number(c.value || 0));
@@ -577,21 +585,24 @@ async function borrowBook(isbn) {
   try {
     await api('/loans/borrow', { method: 'POST', body: JSON.stringify({ isbn }) });
     await Promise.all([fetchMemberLoans(), fetchMemberReservations(), fetchBooks()]);
-  } catch (err) { alert(err.message); }
+    showMessage('Borrowed successfully');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function reserveBook(isbn) {
   try {
     await api('/reservations', { method: 'POST', body: JSON.stringify({ isbn }) });
     await fetchMemberReservations();
-  } catch (err) { alert(err.message); }
+    showMessage('Reserved');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function cancelReservation(id) {
   try {
     await api(`/reservations/${id}/cancel`, { method: 'PATCH' });
     await fetchMemberReservations();
-  } catch (err) { alert(err.message); }
+    showMessage('Reservation cancelled');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function returnLoan(loanId) {
@@ -602,21 +613,24 @@ async function returnLoan(loanId) {
     } else {
       await Promise.all([fetchMemberLoans(), fetchMemberFines(), fetchBooks()]);
     }
-  } catch (err) { alert(err.message); }
+    showMessage('Return processed');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function payFine(fineId) {
   try {
     await api(`/fines/${fineId}/pay`, { method: 'PATCH' });
     await fetchMemberFines();
-  } catch (err) { alert(err.message); }
+    showMessage('Fine paid');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function reduceFine(fineId, amount) {
   try {
     await api(`/fines/${fineId}/reduce`, { method: 'PUT', body: JSON.stringify({ amount }) });
     await fetchAdminFines();
-  } catch (err) { alert(err.message); }
+    showMessage('Fine reduced');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function addBook(e) {
@@ -637,16 +651,17 @@ async function addBook(e) {
     e.target.reset();
     await fetchBooks();
     renderAdminBooks();
-  } catch (err) { alert(err.message); }
+    showMessage('Book added');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function deleteBook(isbn) {
-  if (!confirm('Delete this book?')) return;
   try {
     await api(`/books/${encodeURIComponent(isbn)}`, { method: 'DELETE' });
     await fetchBooks();
     renderAdminBooks();
-  } catch (err) { alert(err.message); }
+    showMessage('Book deleted');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function addMember(e) {
@@ -663,24 +678,26 @@ async function addMember(e) {
     }) });
     e.target.reset();
     await fetchAdminMembers();
-  } catch (err) { alert(err.message); }
+    showMessage('Member created');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function issueBook(e) {
   e.preventDefault();
   const memberId = qs('#issue-member').value;
   const isbn = qs('#issue-book-select').value;
-  if (!memberId || !isbn) { alert('Select member and book'); return; }
+  if (!memberId || !isbn) { showMessage('Select member and book'); return; }
   try {
     await api('/loans/borrow', { method: 'POST', body: JSON.stringify({ memberId: Number(memberId), isbn }) });
     await Promise.all([fetchAdminLoans(), fetchBooks(), fetchAdminReservations()]);
-  } catch (err) { alert(err.message); }
+    showMessage('Book issued');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function returnFromAdmin(e) {
   e.preventDefault();
   const loanId = qs('#return-loan').value;
-  if (!loanId) { alert('Select a loan'); return; }
+  if (!loanId) { showMessage('Select a loan'); return; }
   await returnLoan(Number(loanId));
 }
 
@@ -688,19 +705,22 @@ async function updateReservationStatus(id, status) {
   try {
     await api(`/reservations/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
     await Promise.all([fetchAdminReservations(), fetchAdminLoans(), fetchBooks()]);
-  } catch (err) { alert(err.message); }
+    showMessage('Reservation updated');
+  } catch (err) { showMessage(err.message); }
 }
 
 async function updateFineStatus(id, status) {
   try {
     await api(`/fines/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
     await fetchAdminFines();
-  } catch (err) { alert(err.message); }
+    showMessage('Fine status updated');
+  } catch (err) { showMessage(err.message); }
 }
 
 function fillMemberSelects() {
   const memberSel = qs('#issue-member');
   const loanSel = qs('#return-loan');
+  const fineSel = qs('#fine-member');
   if (memberSel) {
     memberSel.innerHTML = `<option value="">Select member</option>` + state.admin.members.map((m) =>
       `<option value="${m.memberId}">${m.fullName || m.username} (${m.memberId})</option>`
@@ -709,6 +729,11 @@ function fillMemberSelects() {
   if (loanSel) {
     loanSel.innerHTML = `<option value="">Select loan</option>` + state.admin.loans.filter((l) => !l.returnDate).map((l) =>
       `<option value="${l.loanId}">${l.title || l.isbn} - ${l.memberName || l.memberId}</option>`
+    ).join('');
+  }
+  if (fineSel) {
+    fineSel.innerHTML = `<option value="">Select member</option>` + state.admin.members.map((m) =>
+      `<option value="${m.memberId}">${m.fullName || m.username} (${m.memberId})</option>`
     ).join('');
   }
 }
@@ -780,16 +805,31 @@ function wireEvents() {
   qs('#admin-member-form').addEventListener('submit', addMember);
   qs('#issue-form').addEventListener('submit', issueBook);
   qs('#return-form').addEventListener('submit', returnFromAdmin);
+  qs('#admin-fine-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    if (!data.fineAmount || !data.memberId) { showMessage('Select member and amount'); return; }
+    try {
+      await api('/fines', { method: 'POST', body: JSON.stringify({
+        memberId: Number(data.memberId),
+        fineAmount: Number(data.fineAmount),
+        loanId: data.loanId ? Number(data.loanId) : undefined
+      }) });
+      e.target.reset();
+      await fetchAdminFines();
+      showMessage('Fine added');
+    } catch (err) { showMessage(err.message); }
+  });
   qs('#fine-pay-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const pending = state.fines.find((f) => f.paymentStatus !== 'Paid');
     if (pending) payFine(pending.fineId);
-    else alert('No pending fines.');
+    else showMessage('No pending fines.');
   });
   qs('#pay-first-fine').addEventListener('click', () => {
     const pending = state.fines.find((f) => f.paymentStatus !== 'Paid');
     if (pending) payFine(pending.fineId);
-    else alert('No pending fines.');
+    else showMessage('No pending fines.');
   });
   qsa('.view-more').forEach((link) => link.addEventListener('click', (e) => {
     e.preventDefault();

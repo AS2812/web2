@@ -30,10 +30,6 @@
         <button class="primary-btn" type="submit">Create an account</button>
       </form>
       <form id="signin-form" class="auth-form">
-        <select name="role" required>
-          <option value="Member">Member</option>
-          <option value="Admin">Librarian</option>
-        </select>
         <input name="username" placeholder="Enter your username" required />
         <input type="password" name="password" placeholder="Password" required />
         <div class="row between small">
@@ -85,6 +81,7 @@
     </aside>
 
     <main class="content">
+      <div id="status-bar" class="status-bar hidden"></div>
       <!-- Member home -->
       <section id="member-home" class="section visible">
         <div class="section-header">
@@ -265,6 +262,12 @@
             </div>
           </div>
         </div>
+        <form id="admin-fine-form" class="form-grid">
+          <select id="fine-member" name="memberId" required></select>
+          <input name="fineAmount" type="number" min="0" step="0.01" placeholder="Amount" required />
+          <input name="loanId" type="number" min="1" placeholder="Loan ID (optional)" />
+          <button class="primary-btn" type="submit">Add Fine</button>
+        </form>
         <table class="data-table">
           <thead><tr><th>Member</th><th>Book</th><th>Amount</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody id="admin-fine-rows"></tbody>

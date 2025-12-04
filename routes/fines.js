@@ -78,4 +78,20 @@ router.put('/:id/reduce', authMiddleware, requireRole('Admin'), async (req, res)
   return sendSuccess(res, updated);
 });
 
+// Admin can add a fine manually
+router.post('/', authMiddleware, requireRole('Admin'), async (req, res) => {
+  const { memberId, loanId, fineAmount, note } = req.body || {};
+  if (!memberId || fineAmount === undefined) return sendError(res, 'memberId and fineAmount are required');
+  const member = await get('SELECT * FROM members WHERE memberId = ?', [memberId]);
+  if (!member) return sendError(res, 'Member not found', 'not_found', 404);
+  const amount = Number(fineAmount);
+  const fineDate = new Date().toISOString();
+  const result = await run(
+    `INSERT INTO fines (loanId, memberId, fineAmount, fineDate, paymentStatus) VALUES (?, ?, ?, ?, 'Pending')`,
+    [loanId || null, memberId, amount, fineDate]
+  );
+  const fine = await get('SELECT * FROM fines WHERE fineId = ?', [result.id]);
+  return sendSuccess(res, fine, 201);
+});
+
 module.exports = router;
