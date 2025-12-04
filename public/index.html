@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Library Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+  <script src="chart.min.js"></script>
+</head>
+<body>
+  <!-- Auth overlay -->
+  <div id="auth-overlay" class="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-tabs">
+        <button id="tab-signup" class="auth-tab" type="button">Sign Up</button>
+        <button id="tab-signin" class="auth-tab active" type="button">Sign In</button>
+      </div>
+      <form id="signup-form" class="auth-form hidden">
+        <div class="row two">
+          <input name="firstName" placeholder="First Name" required />
+          <input name="lastName" placeholder="Last Name" required />
+        </div>
+        <input name="username" placeholder="Username" required />
+        <input name="phone" placeholder="Phone Number" />
+        <input type="password" name="password" placeholder="Password" required />
+        <input type="password" name="confirmPassword" placeholder="Confirm Password" required />
+        <button class="primary-btn" type="submit">Create an account</button>
+      </form>
+      <form id="signin-form" class="auth-form">
+        <select name="role" required>
+          <option value="Member">Member</option>
+          <option value="Admin">Librarian</option>
+        </select>
+        <input name="username" placeholder="Enter your username" required />
+        <input type="password" name="password" placeholder="Password" required />
+        <div class="row between small">
+          <label><input type="checkbox" name="remember" /> Remember me</label>
+          <a class="muted" href="#">Forgot password?</a>
+        </div>
+        <button class="primary-btn" type="submit">Sign in</button>
+      </form>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">📚</div>
+      <div>
+        <p class="brand-title">Library Management System</p>
+        <p class="muted">Member & Librarian Portal</p>
+      </div>
+    </div>
+    <button id="menu-toggle" class="menu-btn">☰</button>
+  </header>
+
+  <div class="shell">
+    <aside id="sidebar" class="sidebar">
+      <nav id="member-nav" class="nav-group">
+        <p class="nav-label">Member</p>
+        <button class="nav-item active" data-section="member-home">Home Page</button>
+        <button class="nav-item" data-section="member-books">Books</button>
+        <button class="nav-item" data-section="member-borrowed">My Borrowed Books</button>
+        <button class="nav-item" data-section="member-reserved">My Reserved Books</button>
+        <button class="nav-item" data-section="member-fines">Fines & Payments</button>
+      </nav>
+      <nav id="admin-nav" class="nav-group hidden">
+        <p class="nav-label">Librarian</p>
+        <button class="nav-item active" data-section="admin-dashboard">Dashboard</button>
+        <button class="nav-item" data-section="admin-books">Manage Books</button>
+        <button class="nav-item" data-section="admin-members">Manage Members</button>
+        <button class="nav-item" data-section="admin-reservations">Reservations</button>
+        <button class="nav-item" data-section="admin-fines">Fines Management</button>
+      </nav>
+      <div class="profile-card">
+        <div id="avatar" class="avatar">U</div>
+        <div class="profile-info">
+          <p id="profile-name">Guest</p>
+          <span id="profile-role">Role</span>
+        </div>
+        <button id="logout-btn" class="secondary-btn" type="button">Logout</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <!-- Member home -->
+      <section id="member-home" class="section visible">
+        <div class="section-header">
+          <div>
+            <p class="muted small" id="welcome-date"></p>
+            <h2 id="welcome-text">Welcome!</h2>
+          </div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-card">
+            <p>Borrowed Books</p><h3 id="stat-borrowed">0</h3>
+            <a href="#" data-target="member-borrowed" class="view-more">View More</a>
+          </div>
+          <div class="stat-card">
+            <p>Reservations</p><h3 id="stat-reservations">0</h3>
+            <a href="#" data-target="member-reserved" class="view-more">View More</a>
+          </div>
+          <div class="stat-card">
+            <p>Fines Due</p><h3 id="stat-fines">$0</h3>
+            <a href="#" data-target="member-fines" class="view-more">View More</a>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Book Recommendations</h3>
+            <a href="#" data-target="member-books" class="view-more">View More</a>
+          </div>
+          <div id="recommendations" class="card-row"></div>
+        </div>
+        <div class="panel">
+          <h3>My Activity</h3>
+          <canvas id="member-chart" height="220"></canvas>
+        </div>
+      </section>
+
+      <!-- Member books -->
+      <section id="member-books" class="section">
+        <div class="section-header">
+          <h2>Books</h2>
+          <input id="books-search" class="input" placeholder="Search by Book Title / Author" />
+        </div>
+        <div id="book-categories" class="category-stack"></div>
+      </section>
+
+      <section id="member-borrowed" class="section">
+        <div class="section-header"><h2>My Borrowed Books</h2></div>
+        <div id="borrowed-grid" class="card-grid"></div>
+      </section>
+
+      <section id="member-reserved" class="section">
+        <div class="section-header"><h2>My Reserved Books</h2></div>
+        <div id="reserved-grid" class="card-grid"></div>
+      </section>
+
+      <section id="member-fines" class="section">
+        <div class="section-header"><h2>Fines & Payments</h2></div>
+        <div class="stat-row">
+          <div class="stat-card"><p>Unpaid Fines</p><h3 id="member-fine-total">$0</h3></div>
+          <button id="pay-first-fine" class="primary-btn" type="button">Pay First Pending</button>
+        </div>
+        <form id="fine-pay-form" class="form-grid">
+          <input name="firstName" placeholder="First Name" />
+          <input name="lastName" placeholder="Last Name" />
+          <input name="phone" placeholder="Phone Number" />
+          <input name="email" type="email" placeholder="Email" />
+          <input name="amount" placeholder="Amount to pay $" />
+          <button class="primary-btn" type="submit">Confirm</button>
+        </form>
+        <table class="data-table">
+          <thead>
+            <tr><th>Book Title</th><th>Due date</th><th>Return date</th><th>Fine amount</th><th>Status</th><th>Action</th></tr>
+          </thead>
+          <tbody id="fine-rows"></tbody>
+        </table>
+      </section>
+
+      <!-- Admin dashboard -->
+      <section id="admin-dashboard" class="section">
+        <div class="section-header">
+          <div>
+            <p class="muted small" id="admin-date"></p>
+            <h2 id="admin-welcome">Welcome!</h2>
+          </div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-card"><p>Total Books</p><h3 id="dash-total-books">0</h3></div>
+          <div class="stat-card"><p>Borrowed Books</p><h3 id="dash-active-loans">0</h3></div>
+          <div class="stat-card"><p>Overdue Books</p><h3 id="dash-overdue">0</h3></div>
+          <div class="stat-card"><p>Total Members</p><h3 id="dash-total-members">0</h3></div>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-tab="overview">Overview</button>
+          <button class="tab" data-tab="add-book">Add New Book</button>
+          <button class="tab" data-tab="register-member">Register New Member</button>
+          <button class="tab" data-tab="issue-book">Issue Book(s)</button>
+          <button class="tab" data-tab="return-book">Return Book(s)</button>
+        </div>
+        <div class="tab-panel" data-panel="overview">
+          <div class="panel-grid">
+            <div class="panel"><h4>Borrowing Trends</h4><canvas id="admin-bar" height="200"></canvas></div>
+            <div class="panel"><h4>Category Distribution</h4><canvas id="admin-pie" height="200"></canvas></div>
+          </div>
+        </div>
+        <div class="tab-panel hidden" data-panel="add-book">
+          <form id="admin-book-form" class="form-grid">
+            <input name="title" placeholder="Book Title" required />
+            <input name="author" placeholder="Author Name(s)" />
+            <input name="isbn" placeholder="ISBN" required />
+            <input name="category" placeholder="Category / Genre" />
+            <input name="publicationDate" type="date" placeholder="Publication Date" />
+            <input name="copiesAvailable" type="number" min="0" placeholder="Copies Available" />
+            <input name="totalCopies" type="number" min="1" placeholder="Total Copies" />
+            <input name="cover" placeholder="Cover URL" />
+            <textarea name="description" placeholder="Description"></textarea>
+            <button class="primary-btn" type="submit">Add Book</button>
+          </form>
+        </div>
+        <div class="tab-panel hidden" data-panel="register-member">
+          <form id="admin-member-form" class="form-grid">
+            <input name="name" placeholder="Full Name" required />
+            <input name="username" placeholder="Username" required />
+            <input name="email" type="email" placeholder="Email" required />
+            <input name="phone" placeholder="Phone" />
+            <input name="address" placeholder="Address" />
+            <input name="password" type="password" placeholder="Password" required />
+            <button class="primary-btn" type="submit">Create Member</button>
+          </form>
+        </div>
+        <div class="tab-panel hidden" data-panel="issue-book">
+          <form id="issue-form" class="form-grid">
+            <select id="issue-member" required></select>
+            <select id="issue-book-select" required></select>
+            <input name="dueDate" type="date" placeholder="Due Date (optional)" />
+            <button class="primary-btn" type="submit">Confirm Issue</button>
+          </form>
+        </div>
+        <div class="tab-panel hidden" data-panel="return-book">
+          <form id="return-form" class="form-grid">
+            <select id="return-loan" required></select>
+            <input name="returnDate" type="date" placeholder="Return Date (ignored, uses now)" />
+            <button class="primary-btn" type="submit">Confirm Return</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="admin-books" class="section">
+        <div class="section-header">
+          <h2>Book Collection</h2>
+          <input id="admin-books-search" class="input" placeholder="Search by Author / Title / ISBN / Genre" />
+        </div>
+        <div id="admin-books-grid" class="card-grid"></div>
+      </section>
+
+      <section id="admin-members" class="section">
+        <div class="section-header"><h2>Members</h2></div>
+        <div id="admin-members-grid" class="card-grid"></div>
+      </section>
+
+      <section id="admin-reservations" class="section">
+        <div class="section-header"><h2>Reservations</h2></div>
+        <table class="data-table">
+          <thead><tr><th>Book Title</th><th>Member</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="admin-reservation-rows"></tbody>
+        </table>
+      </section>
+
+      <section id="admin-fines" class="section">
+        <div class="section-header"><h2>Fines Management</h2></div>
+        <div class="stat-row">
+          <div class="stat-card"><p>Total Unpaid Fines</p><h3 id="fine-total">$0</h3></div>
+          <div class="stat-card"><p>Members with Fines</p><h3 id="fine-members">0</h3></div>
+          <div class="stat-card"><p>Books Overdue</p><h3 id="fine-overdue">0</h3></div>
+          <div class="stat-card fine-calc">
+            <p>Fine Calculator (10 per day)</p>
+            <div class="row two">
+              <input id="calc-days" type="number" min="0" placeholder="Days" />
+              <input id="calc-result" placeholder="Total" readonly />
+            </div>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Member</th><th>Book</th><th>Amount</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="admin-fine-rows"></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+  <div id="book-modal" class="modal hidden">
+    <div class="modal-content">
+      <button id="modal-close" class="modal-close" type="button">×</button>
+      <div class="modal-body">
+        <div id="modal-cover" class="modal-cover"></div>
+        <div class="modal-info">
+          <h3 id="modal-title"></h3>
+          <p id="modal-authors" class="muted"></p>
+          <p id="modal-genre"></p>
+          <p id="modal-year"></p>
+          <p id="modal-availability" class="status-pill"></p>
+        </div>
+      </div>
+      <p id="modal-description"></p>
+      <div class="modal-actions">
+        <button id="modal-reserve" class="secondary-btn" type="button">Reserve</button>
+        <button id="modal-borrow" class="primary-btn" type="button">Borrow now</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

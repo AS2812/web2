@@ -1,209 +1,49 @@
-# Library Management API
+# Library Management Web App (Plain JS + SQLite)
 
-Node.js + TypeScript REST API for a Library Management System backed by SQL Server, Prisma, Express, JWT auth, and Zod validation. Includes Dockerized local setup, Swagger docs, and integration tests.
+Two-role (Member, Librarian) library system that matches the PDF UX: left sidebar navs, auth overlays, dashboards, charts, catalogs, reservations, fines, and CRUD flows. All code is plain JavaScript + HTML/CSS (no TypeScript, no build tools).
 
-## Stack
-- Node.js 20+, TypeScript, Express
-- Prisma ORM (SQL Server)
-- JWT + bcrypt for auth
-- Zod for input validation
-- Jest + Supertest for integration tests
-- Swagger UI for docs
+## Quickstart
+1. Install deps: `npm install`
+2. Run: `npm start`
+3. Open: `http://localhost:3000`
 
-## Prerequisites
-- Docker + Docker Compose
-- Node.js 20+ and npm (for local runs)
+## Seeded Credentials
+- Librarian: `admin` / `admin123`
+- Members (password `password`): `mohannad`, `noureen`, `raneem`, `habiba`, `maryam`, `ethar`, `forat`
 
-## Configuration
-1) Copy `.env.example` to `.env` and adjust values (DB URL, JWT secret, bcrypt rounds, admin seed credentials).
-2) Ensure `SA_PASSWORD` meets SQL Server complexity rules.
+## Flows
+- **Auth**: Sign up (member), Sign in (member/librarian by email), JWT stored locally. `/auth/logout` is stateless (drop token).
+- **Member**:
+  - Home dashboard with counts + recommendations and a mini chart.
+  - Catalog grouped by category; book modal with Borrow/Reserve.
+  - Borrowed: return books.
+  - Reserved: cancel; Borrow Now when status Ready/Fulfilled.
+  - Fines & Payments: list fines, pay first pending or specific fine.
+- **Librarian**:
+  - Dashboard KPIs + charts (bar: borrowing trends, pie: categories).
+  - Quick actions: add book, register member, issue book (select member+book), return book.
+  - Manage Books: list/search, delete; (edit could be added via API PUT).
+  - Manage Members: list members.
+  - Reservations: approve (Ready), Fulfill (creates loan), Cancel.
+  - Fines Management: pay, reduce/waive, status updates; calculator.
 
-## Run with Docker
-```bash
-docker compose up --build
-```
-- `db` service starts SQL Server.
-- `db-init` applies `DB.sql` to a `LibraryDB` database automatically.
-- `api` service runs the Express server on port 3000.
+## API (JSON, same-origin)
+- Auth: `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`
+- Books: `GET /books`, `GET /books/:isbn`, `POST /books` (Admin), `PUT /books/:isbn` (Admin), `DELETE /books/:isbn` (Admin)
+- Members: `GET /members`, `GET /members/:id`, `POST /members`, `PUT /members/:id`, `DELETE /members/:id` (Admin)
+- Loans: `GET /loans` (Admin), `GET /loans/me` (Member), `POST /loans/borrow` (Member or Admin with memberId), `POST /loans/return` (Member/Admin), `PATCH /loans/:id/extend` (Admin)
+- Reservations: `GET /reservations` (Admin), `GET /reservations/me` (Member), `POST /reservations` (Member), `PATCH /reservations/:id/cancel` (Member), `PATCH /reservations/:id/status` (Admin Ready/Fulfilled/Cancelled)
+- Fines: `GET /fines` (Admin), `GET /fines/me` (Member), `PATCH /fines/:id/pay`, `PATCH /fines/:id/status` (Admin Pending/Paid/Waived), `PUT /fines/:id/reduce` (Admin)
+- Stats: `GET /stats/admin` (KPIs + bar/pie data), `GET /stats/member` (member counts + category dataset)
 
-## Local Development (without Docker)
-```bash
-npm install
-npm run prisma:generate
-npm run dev
-```
-Ensure SQL Server is running and `DATABASE_URL` points to it.
+Auth header: `Authorization: Bearer <token>`
 
-## Seeding an Admin User
-Create an admin using env credentials (defaults: admin/AdminPass123!):
-```bash
-npm run seed:admin
-```
+## Data Model (SQLite)
+- Tables: `users`, `members`, `admin_users`, `authors`, `publishers`, `books`, `wrote`, `loans`, `reservations`, `fines`
+- Seed: admin + 7 members, 12 authors, 5 publishers, 40 books with `picsum.photos` covers, sample loan/reservation/fine.
 
-## Testing
-Integration tests expect a clean database:
-```bash
-npm test
-```
-
-## API Surface (high level)
-- Auth: `POST /auth/register`, `POST /auth/login`, `GET /auth/me`
-- Books: `GET /books`, `GET /books/:isbn`, `POST /books` (Admin), `PATCH /books/:isbn` (Admin), `DELETE /books/:isbn` (Admin)
-- Authors/Publishers: CRUD (read for members, write for Admin)
-- Loans: `POST /loans/borrow` (Member), `POST /loans/return` (Member/Admin), `GET /loans/me` (Member)
-- Reservations: `POST /reservations`, `PATCH /reservations/:id/cancel`, `GET /reservations/me` (Member)
-- Fines: `GET /fines/me` (Member), `PATCH /fines/:id/pay` (Member/Admin)
-- Admin: `GET /admin/dashboard` (Admin)
-- Swagger UI: `GET /docs`
-
-Responses follow `{ success, data, error }` shape.
-
-## Notes
-- Borrow sets a 14-day due date; overdue returns create fines at $1/day (configurable in code).
-- Inventory updates are transactional to avoid negative stock.
-- Validation uses Zod; rate limiting is applied to auth endpoints.
-
-## Database Schema (from DB.sql)
-```
--- 1. Table for Authors
-CREATE TABLE AUTHOR (
-    author_id INT PRIMARY KEY IDENTITY(1,1),
-    name NVARCHAR(100) NOT NULL
-);
-GO
-
--- 2. Table for Publishers
-CREATE TABLE PUBLISHER (
-    publisher_id INT PRIMARY KEY IDENTITY(1,1),
-    name NVARCHAR(100) NOT NULL,
-    address NVARCHAR(255)
-);
-GO
-
--- 3. Table for Books (Catalog)
-CREATE TABLE BOOK (
-    ISBN NVARCHAR(20) PRIMARY KEY,
-    title NVARCHAR(255) NOT NULL,
-    edition NVARCHAR(50),
-    category NVARCHAR(100),
-    publication_date DATE,
-    publisher_id INT,
-    copies_available INT NOT NULL DEFAULT 1,
-    total_copies INT NOT NULL DEFAULT 1,
-    
-    -- Foreign Key Constraint
-    CONSTRAINT FK_BOOK_PUBLISHER FOREIGN KEY (publisher_id)
-        REFERENCES PUBLISHER(publisher_id)
-);
-GO
-
--- 4. Junction Table for the Many-to-Many relationship between AUTHOR and BOOK ("WROTE")
-CREATE TABLE WROTE (
-    author_id INT,
-    ISBN NVARCHAR(20),
-    PRIMARY KEY (author_id, ISBN),
-    
-    CONSTRAINT FK_WROTE_AUTHOR FOREIGN KEY (author_id)
-        REFERENCES AUTHOR(author_id),
-    
-    CONSTRAINT FK_WROTE_BOOK FOREIGN KEY (ISBN)
-        REFERENCES BOOK(ISBN)
-);
-GO
-
--- 5. Table for General System Users (Member and Admin)
-CREATE TABLE [USER] (
-    user_id INT PRIMARY KEY IDENTITY(1,1),
-    username NVARCHAR(50) UNIQUE NOT NULL,
-    password_hash NVARCHAR(255) NOT NULL,
-    email NVARCHAR(100) UNIQUE NOT NULL,
-    user_role NVARCHAR(50) NOT NULL, 
-    
-    CONSTRAINT CHK_USER_ROLE CHECK (user_role IN ('Member', 'Admin'))
-);
-GO
-
--- 6. Table for Library Members (Specific Member details, linked to USER)
-CREATE TABLE MEMBER (
-    member_id INT PRIMARY KEY IDENTITY(1,1),
-    user_id INT UNIQUE NOT NULL, 
-    member_number NVARCHAR(50) UNIQUE,
-    name NVARCHAR(100) NOT NULL,
-    address NVARCHAR(255),
-    membership_expiry_date DATE,
-    
-    CONSTRAINT FK_MEMBER_USER FOREIGN KEY (user_id)
-        REFERENCES [USER](user_id)
-);
-GO
-
--- 7. Table for Admin Users (Librarians/Managers)
-CREATE TABLE ADMIN_USER (
-    admin_id INT PRIMARY KEY IDENTITY(1,1),
-    user_id INT UNIQUE NOT NULL, -- Links to the USER table for login/auth
-    
-    CONSTRAINT FK_ADMIN_USER_USER FOREIGN KEY (user_id)
-        REFERENCES [USER](user_id)
-);
-GO
-
-
-
-
--- 8. Table for Loan/Borrowing Transactions
-CREATE TABLE LOAN (
-    loan_id INT PRIMARY KEY IDENTITY(1,1),
-    ISBN NVARCHAR(20) NOT NULL,
-    member_id INT NOT NULL,
-    borrow_date DATE NOT NULL,
-    due_date DATE NOT NULL,
-    return_date DATE,
-    
-    CONSTRAINT FK_LOAN_BOOK FOREIGN KEY (ISBN)
-        REFERENCES BOOK(ISBN),
-        
-    CONSTRAINT FK_LOAN_MEMBER FOREIGN KEY (member_id)
-        REFERENCES MEMBER(member_id)
-);
-GO
-
--- 9. Table for Fine Tracking
-CREATE TABLE FINE (
-    fine_id INT PRIMARY KEY IDENTITY(1,1),
-    loan_id INT UNIQUE NOT NULL,
-    member_id INT NOT NULL,
-    fine_amount DECIMAL(10, 2) NOT NULL,
-    fine_date DATE NOT NULL,
-    payment_status NVARCHAR(50) DEFAULT 'Pending',
-    
-    CONSTRAINT FK_FINE_LOAN FOREIGN KEY (loan_id)
-        REFERENCES LOAN(loan_id),
-        
-    CONSTRAINT FK_FINE_MEMBER FOREIGN KEY (member_id)
-        REFERENCES MEMBER(member_id),
-        
-    CONSTRAINT CHK_FINE_STATUS CHECK (payment_status IN ('Pending', 'Paid', 'Waived'))
-);
-GO
-
--- 10. Table for Book Reservations
-CREATE TABLE RESERVATION (
-    reservation_id INT PRIMARY KEY IDENTITY(1,1),
-    ISBN NVARCHAR(20) NOT NULL,
-    member_id INT NOT NULL,
-    reservation_date DATETIME NOT NULL, -- Using DATETIME for precision
-    status NVARCHAR(50) DEFAULT 'Pending',
-    
-    CONSTRAINT FK_RESERVATION_BOOK FOREIGN KEY (ISBN)
-        REFERENCES BOOK(ISBN),
-        
-    CONSTRAINT FK_RESERVATION_MEMBER FOREIGN KEY (member_id)
-        REFERENCES MEMBER(member_id),
-        
-    -- Constraint to prevent a member from having multiple active reservations for the same book
-    CONSTRAINT UC_Active_Reservation UNIQUE (ISBN, member_id),
-    
-    CONSTRAINT CHK_RESERVATION_STATUS CHECK (status IN ('Pending', 'Ready_for_Pickup', 'Fulfilled', 'Cancelled'))
-);
-GO
-```
+## Assumptions
+- Loan duration: 14 days
+- Fine: $1/day late (created on return if overdue)
+- One active reservation per member/book (Pending/Ready); fulfilling decreases stock and creates a loan.
+- Copy counts adjust on borrow/return/fulfill.
