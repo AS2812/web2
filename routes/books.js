@@ -122,6 +122,14 @@ router.put('/:isbn', authMiddleware, requireRole('Admin'), async (req, res) => {
 router.delete('/:isbn', authMiddleware, requireRole('Admin'), async (req, res) => {
   const book = await get('SELECT * FROM books WHERE isbn = ?', [req.params.isbn]);
   if (!book) return sendError(res, 'Book not found', 'not_found', 404);
+  // Clean dependent rows to satisfy FK constraints.
+  const loans = await all('SELECT loanId FROM loans WHERE isbn = ?', [req.params.isbn]);
+  for (const loan of loans) {
+    await run('DELETE FROM fines WHERE loanId = ?', [loan.loanId]);
+  }
+  await run('DELETE FROM reservations WHERE isbn = ?', [req.params.isbn]);
+  await run('DELETE FROM loans WHERE isbn = ?', [req.params.isbn]);
+  await run('DELETE FROM wrote WHERE isbn = ?', [req.params.isbn]);
   await run('DELETE FROM books WHERE isbn = ?', [req.params.isbn]);
   return sendSuccess(res, book);
 });

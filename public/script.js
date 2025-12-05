@@ -1,6 +1,17 @@
 const qs = (sel) => document.querySelector(sel);
 const qsa = (sel) => Array.from(document.querySelectorAll(sel));
 const API_BASE = '';
+const COVER_SIZE = 'L';
+const PLACEHOLDER = 'https://placehold.co/600x800?text=No+Cover';
+const CACHE_KEY = 'coverCache_v1';
+const coverCacheMem = new Map();
+let coverCacheStorage = {};
+try {
+  const stored = localStorage.getItem(CACHE_KEY);
+  coverCacheStorage = stored ? JSON.parse(stored) : {};
+} catch (err) {
+  coverCacheStorage = {};
+}
 
 const state = {
   token: localStorage.getItem('token'),
@@ -57,7 +68,12 @@ async function api(path, options = {}) {
     ...(options.headers || {})
   };
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  const data = await res.json().catch(() => null);
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (err) {
+    // non-JSON response
+  }
   if (res.status === 401) {
     handleLogout('Session expired. Please sign in again.');
     throw new Error('Unauthorized');
@@ -145,6 +161,7 @@ async function fetchProfile() {
 
 async function fetchBooks() {
   state.books = await api('/books');
+  state.bookMap = new Map(state.books.map((b) => [b.isbn, b]));
   renderBooks();
   renderRecommendations();
   renderAdminBooks();
@@ -209,7 +226,59 @@ function renderProfile() {
 }
 
 function placeholderCover(book) {
-  return `https://via.placeholder.com/240x320/cee8f4/3b4f93?text=${encodeURIComponent(book?.title || 'Book')}`;
+  return PLACEHOLDER;
+}
+
+function sanitizeIsbn(isbn) {
+  return (isbn || '').replace(/[-\s]/g, '').trim();
+}
+function buildOpenLibraryUrl(isbn, size = COVER_SIZE) {
+  const clean = sanitizeIsbn(isbn);
+  if (!clean) return PLACEHOLDER;
+  return `https://covers.openlibrary.org/b/isbn/${clean}-${size}.jpg?default=false`;
+}
+function getCachedCover(isbn) {
+  const clean = sanitizeIsbn(isbn);
+  if (!clean) return null;
+  if (coverCacheMem.has(clean)) return coverCacheMem.get(clean);
+  if (coverCacheStorage[clean]) {
+    coverCacheMem.set(clean, coverCacheStorage[clean]);
+    return coverCacheStorage[clean];
+  }
+  return null;
+}
+function setCachedCover(isbn, url) {
+  const clean = sanitizeIsbn(isbn);
+  if (!clean) return;
+  coverCacheMem.set(clean, url);
+  coverCacheStorage[clean] = url;
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(coverCacheStorage)); } catch {}
+}
+function coverUrlFor(book) {
+  const cached = getCachedCover(book?.isbn);
+  if (cached) return cached;
+  return buildOpenLibraryUrl(book?.isbn);
+}
+function loadCoverIntoImg(imgEl, isbn, title = 'Book') {
+  const url = coverUrlFor({ isbn });
+  imgEl.loading = 'lazy';
+  imgEl.decoding = 'async';
+  imgEl.src = url;
+  imgEl.alt = `Cover of ${title}`;
+  imgEl.onerror = () => {
+    if (imgEl.dataset.fallback === '1') return;
+    imgEl.dataset.fallback = '1';
+    imgEl.src = PLACEHOLDER;
+    setCachedCover(isbn, PLACEHOLDER);
+  };
+  imgEl.onload = () => {
+    if (imgEl.src !== PLACEHOLDER) {
+      setCachedCover(isbn, imgEl.src);
+    }
+  };
+}
+function setCover(imgEl, book) {
+  loadCoverIntoImg(imgEl, book?.isbn, book?.title || 'Book');
 }
 
 function renderRecommendations() {
@@ -219,11 +288,13 @@ function renderRecommendations() {
     const card = document.createElement('div');
     card.className = 'book-card';
     card.innerHTML = `
-      <img src="${book.cover || placeholderCover(book)}" alt="${book.title}" />
+      <div class="cover"><img /></div>
       <h4>${book.title}</h4>
       <p class="muted">${book.authors?.map((a) => a.name).join(', ') || 'Author'}</p>
       <p>${book.category || 'General'}</p>
     `;
+    const img = card.querySelector('img');
+    setCover(img, book);
     card.addEventListener('click', () => openModal(book));
     list.append(card);
   });
@@ -254,12 +325,14 @@ function bookTile(book) {
   const div = document.createElement('div');
   div.className = 'book-tile';
   div.innerHTML = `
-    <img src="${book.cover || placeholderCover(book)}" alt="${book.title}" />
+    <div class="cover"><img /></div>
     <h4>${book.title}</h4>
     <p class="muted">${book.authors?.map((a) => a.name).join(', ') || 'Author'}</p>
     <p>${book.category || 'General'}</p>
     <p class="status ${book.copiesAvailable > 0 ? 'available' : 'pending'}">${book.copiesAvailable > 0 ? 'Available' : 'Not available'}</p>
   `;
+  const img = div.querySelector('img');
+  setCover(img, book);
   const actions = document.createElement('div');
   actions.className = 'card-actions';
   const borrowBtn = document.createElement('button');
@@ -293,13 +366,15 @@ function renderBorrowed() {
     const card = document.createElement('div');
     card.className = 'book-tile';
     card.innerHTML = `
-      <img src="${book?.cover || placeholderCover(book)}" alt="${book?.title || loan.isbn}" />
+      <div class="cover"><img /></div>
       <h4>${book?.title || loan.isbn}</h4>
       <p class="muted">${book?.authors?.map((a) => a.name).join(', ') || ''}</p>
       <p class="status ${statusText.toLowerCase()}">${statusText}</p>
       <p class="muted">Borrowed: ${formatDate(loan.borrowDate)}</p>
       <p class="muted">Due: ${formatDate(loan.dueDate)}</p>
     `;
+    const img = card.querySelector('img');
+    setCover(img, book || { isbn: loan.isbn, title: loan.isbn });
     if (!loan.returnDate) {
       const btn = document.createElement('button');
       btn.className = 'primary-btn';
@@ -320,12 +395,14 @@ function renderReservations() {
     const card = document.createElement('div');
     card.className = 'book-tile';
     card.innerHTML = `
-      <img src="${book?.cover || placeholderCover(book)}" alt="${book?.title || res.isbn}" />
+      <div class="cover"><img /></div>
       <h4>${book?.title || res.isbn}</h4>
       <p class="muted">${book?.authors?.map((a) => a.name).join(', ') || ''}</p>
       <p class="status ${res.status.toLowerCase()}">${res.status}</p>
       <p class="muted">Reserved: ${formatDate(res.reservationDate)}</p>
     `;
+    const img = card.querySelector('img');
+    setCover(img, book || { isbn: res.isbn, title: res.isbn });
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     const cancelBtn = document.createElement('button');
@@ -351,23 +428,46 @@ function renderMemberFines() {
   tbody.innerHTML = '';
   let total = 0;
   state.fines.forEach((fine) => {
+    const loan = state.loans.find((l) => l.loanId === fine.loanId);
+    const book = loan && state.bookMap ? state.bookMap.get(loan.isbn) : null;
     const statusClass = fine.paymentStatus === 'Paid' ? 'ready' : 'overdue';
     if (fine.paymentStatus !== 'Paid') total += Number(fine.fineAmount || 0);
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${fine.title || '-'}</td>
+      <td>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <img class="thumb" />
+          <span>${book?.title || loan?.isbn || '-'}</span>
+        </div>
+      </td>
       <td>${formatDate(fine.dueDate)}</td>
       <td>${formatDate(fine.returnDate)}</td>
-      <td>$${Number(fine.fineAmount || 0).toFixed(2)}</td>
+      <td></td>
       <td class="status ${statusClass}">${fine.paymentStatus}</td>
       <td></td>
     `;
-    const btn = document.createElement('button');
-    btn.className = 'secondary-btn';
-    btn.textContent = 'Pay';
-    btn.disabled = fine.paymentStatus === 'Paid';
-    btn.addEventListener('click', () => payFine(fine.fineId));
-    tr.lastElementChild.append(btn);
+    const thumb = tr.querySelector('.thumb');
+    if (thumb) setCover(thumb, book || { isbn: loan?.isbn, title: loan?.isbn });
+    const amountCell = tr.children[3];
+    amountCell.textContent = `$${Number(fine.fineAmount || 0).toFixed(2)}`;
+    if (fine.paymentStatus !== 'Paid') {
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.step = '0.01';
+      input.placeholder = 'Amount';
+      input.style.width = '90px';
+      const payBtn = document.createElement('button');
+      payBtn.className = 'secondary-btn';
+      payBtn.textContent = 'Pay';
+      payBtn.addEventListener('click', () => {
+        const amt = input.value ? Number(input.value) : undefined;
+        payFine(fine.fineId, amt);
+      });
+      amountCell.innerHTML = '';
+      amountCell.append(`$${Number(fine.fineAmount || 0).toFixed(2)}`, document.createElement('br'), input);
+      tr.lastElementChild.append(payBtn);
+    }
     tbody.append(tr);
   });
   qs('#member-fine-total').textContent = `$${total.toFixed(2)}`;
@@ -395,18 +495,54 @@ function renderAdminBooks(list = state.books) {
     const card = document.createElement('div');
     card.className = 'book-tile';
     card.innerHTML = `
-      <img src="${book.cover || placeholderCover(book)}" alt="${book.title}" />
+      <div class="cover"><img /></div>
       <h4>${book.title}</h4>
       <p class="muted">${book.category || 'General'}</p>
-      <p>Copies: ${book.copiesAvailable}/${book.totalCopies}</p>
+      <p><strong>Total Copies:</strong> ${book.totalCopies} <span class="muted">(owned)</span></p>
+      <p><strong>Available Copies:</strong> ${book.copiesAvailable} <span class="muted">(borrowable)</span></p>
     `;
+    const img = card.querySelector('img');
+    setCover(img, book);
     const actions = document.createElement('div');
     actions.className = 'card-actions';
+    const copiesInput = document.createElement('input');
+    copiesInput.type = 'number';
+    copiesInput.min = '0';
+    copiesInput.value = book.copiesAvailable;
+    copiesInput.style.width = '90px';
+    copiesInput.placeholder = 'Available';
+    const totalInput = document.createElement('input');
+    totalInput.type = 'number';
+    totalInput.min = '0';
+    totalInput.value = book.totalCopies;
+    totalInput.style.width = '90px';
+    totalInput.placeholder = 'Total';
+    const updateBtn = document.createElement('button');
+    updateBtn.className = 'primary-btn';
+    updateBtn.textContent = 'Save Copies';
+    updateBtn.addEventListener('click', async () => {
+      const copiesAvailable = Number(copiesInput.value);
+      const totalCopies = Number(totalInput.value);
+      const validation = validateCopyInputs(totalCopies, copiesAvailable);
+      if (!validation.ok) {
+        showMessage(validation.msg);
+        return;
+      }
+      try {
+        await api(`/books/${encodeURIComponent(book.isbn)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ copiesAvailable: validation.avail, totalCopies: validation.total })
+        });
+        await fetchBooks();
+        renderAdminBooks();
+        showMessage('Book updated');
+      } catch (err) { showMessage(err.message); }
+    });
     const del = document.createElement('button');
     del.className = 'secondary-btn';
-    del.textContent = 'Delete';
+    del.textContent = 'Delete Title';
     del.addEventListener('click', () => deleteBook(book.isbn));
-    actions.append(del);
+    actions.append(copiesInput, totalInput, updateBtn, del);
     card.append(actions);
     grid.append(card);
   });
@@ -426,6 +562,18 @@ function renderAdminMembers() {
       <p>Phone: ${m.phone || '-'}</p>
       <p>Address: ${m.address || '-'}</p>
     `;
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    const del = document.createElement('button');
+    del.className = 'secondary-btn';
+    del.textContent = 'Delete';
+    del.addEventListener('click', async () => {
+      await api(`/members/${m.memberId}`, { method: 'DELETE' });
+      await fetchAdminMembers();
+      showMessage('Member deleted');
+    });
+    actions.append(del);
+    card.append(actions);
     grid.append(card);
   });
 }
@@ -434,14 +582,22 @@ function renderAdminReservations() {
   const tbody = qs('#admin-reservation-rows');
   tbody.innerHTML = '';
   state.admin.reservations.forEach((res) => {
+    const book = state.books.find((b) => b.isbn === res.isbn);
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${res.title}</td>
+      <td>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <img class="thumb" />
+          <span>${res.title}</span>
+        </div>
+      </td>
       <td>${res.memberName}</td>
       <td>${formatDate(res.reservationDate)}</td>
       <td class="status ${res.status.toLowerCase()}">${res.status}</td>
       <td></td>
     `;
+    const thumb = tr.querySelector('.thumb');
+    if (thumb) setCover(thumb, book || { isbn: res.isbn, title: res.title });
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     ['Ready', 'Fulfilled', 'Cancelled'].forEach((status) => {
@@ -462,15 +618,23 @@ function renderAdminLoans() {
   tbody.innerHTML = '';
   state.admin.loans.forEach((loan) => {
     const status = loanStatus(loan);
+    const book = state.books.find((b) => b.isbn === loan.isbn);
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${loan.title || loan.isbn}</td>
+      <td>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <img class="thumb" />
+          <span>${loan.title || loan.isbn}</span>
+        </div>
+      </td>
       <td>${loan.memberName || loan.memberId}</td>
       <td>${formatDate(loan.borrowDate)}</td>
       <td>${formatDate(loan.dueDate)}</td>
       <td class="status ${status.toLowerCase()}">${status}</td>
       <td></td>
     `;
+    const thumb = tr.querySelector('.thumb');
+    if (thumb) setCover(thumb, book || { isbn: loan.isbn, title: loan.title || loan.isbn });
     const btn = document.createElement('button');
     btn.className = 'primary-btn';
     btn.textContent = loan.returnDate ? 'Returned' : 'Mark Returned';
@@ -492,29 +656,44 @@ function renderAdminFines() {
       total += Number(fine.fineAmount || 0);
       membersWithFines.add(fine.username);
     }
+    const loan = state.admin.loans.find((l) => l.loanId === fine.loanId);
+    const book = loan ? state.books.find((b) => b.isbn === loan.isbn) : null;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${fine.username}</td>
-      <td>${fine.title || '-'}</td>
+      <td>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <img class="thumb" />
+          <span>${fine.title || book?.title || '-'}</span>
+        </div>
+      </td>
       <td>$${Number(fine.fineAmount || 0).toFixed(2)}</td>
       <td>${formatDate(fine.fineDate)}</td>
       <td class="status ${fine.paymentStatus.toLowerCase()}">${fine.paymentStatus}</td>
       <td></td>
     `;
+    const thumb = tr.querySelector('.thumb');
+    if (thumb) setCover(thumb, book || { isbn: loan?.isbn, title: fine.title || loan?.isbn || '-' });
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     const pay = document.createElement('button');
     pay.className = 'primary-btn';
     pay.textContent = 'Pay';
     pay.addEventListener('click', () => updateFineStatus(fine.fineId, 'Paid'));
+    const reduceInput = document.createElement('input');
+    reduceInput.type = 'number';
+    reduceInput.min = '0';
+    reduceInput.step = '0.01';
+    reduceInput.placeholder = 'Reduce by';
+    reduceInput.style.width = '90px';
     const reduce = document.createElement('button');
     reduce.className = 'secondary-btn';
     reduce.textContent = 'Reduce';
     reduce.addEventListener('click', () => {
-      const amt = Number(prompt('Reduce by amount:', '1') || 0);
+      const amt = Number(reduceInput.value || 0);
       if (!Number.isNaN(amt)) reduceFine(fine.fineId, amt);
     });
-    actions.append(pay, reduce);
+    actions.append(pay, reduceInput, reduce);
     tr.lastElementChild.append(actions);
     tbody.append(tr);
   });
@@ -551,8 +730,14 @@ function drawMemberChart(stats) {
   if (!stats) return;
   if (typeof Chart === 'undefined') return;
   const ctx = qs('#member-chart');
-  const labels = (stats.categoryDistribution || []).map((c) => c.label || 'Category');
-  const values = (stats.categoryDistribution || []).map((c) => Number(c.value || 0));
+  const labels = (stats.categoryDistribution && stats.categoryDistribution.length
+    ? stats.categoryDistribution
+    : [{ label: 'General', value: 1 }]
+  ).map((c) => c.label || 'Category');
+  const values = (stats.categoryDistribution && stats.categoryDistribution.length
+    ? stats.categoryDistribution
+    : [{ label: 'General', value: 1 }]
+  ).map((c) => Number(c.value || 0));
   if (memberChart) memberChart.destroy();
   memberChart = new Chart(ctx, {
     type: 'bar',
@@ -574,7 +759,7 @@ function openModal(book) {
   qs('#modal-genre').textContent = book.category || 'General';
   qs('#modal-year').textContent = book.publicationDate || '—';
   qs('#modal-availability').textContent = book.copiesAvailable > 0 ? 'Available' : 'Not available';
-  qs('#modal-cover').style.backgroundImage = `url(${book.cover || placeholderCover(book)})`;
+  qs('#modal-cover').style.backgroundImage = `url(${coverUrlFor(book)})`;
   qs('#modal-description').textContent = book.description || 'No description provided.';
   qs('#book-modal').classList.remove('hidden');
 }
@@ -617,11 +802,11 @@ async function returnLoan(loanId) {
   } catch (err) { showMessage(err.message); }
 }
 
-async function payFine(fineId) {
+async function payFine(fineId, amount) {
   try {
-    await api(`/fines/${fineId}/pay`, { method: 'PATCH' });
-    await fetchMemberFines();
-    showMessage('Fine paid');
+    await api(`/fines/${fineId}/pay`, { method: 'PATCH', body: JSON.stringify({ amount }) });
+    await Promise.all([fetchMemberFines(), fetchMemberLoans()]);
+    showMessage('Fine payment applied');
   } catch (err) { showMessage(err.message); }
 }
 
@@ -633,22 +818,49 @@ async function reduceFine(fineId, amount) {
   } catch (err) { showMessage(err.message); }
 }
 
+let availableTouched = false; // for auto-fill behavior on add form
+let confirmCb = null; // confirm modal callback
+
+function parseIntSafe(val) {
+  const n = Number(val);
+  return Number.isInteger(n) ? n : NaN;
+}
+
+function validateCopyInputs(totalVal, availVal) {
+  const total = parseIntSafe(totalVal);
+  const avail = parseIntSafe(availVal);
+  if (!Number.isFinite(total) || !Number.isFinite(avail)) return { ok: false, msg: 'Copies must be whole numbers.' };
+  if (total < 0 || avail < 0) return { ok: false, msg: 'Copies cannot be negative.' };
+  if (avail > total) return { ok: false, msg: 'Available copies cannot exceed total copies.' };
+  return { ok: true, total, avail };
+}
+// Test scenario: total=5, available=5; if total changed to 3, available must be <=3 before saving.
+
 async function addBook(e) {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target).entries());
+  const validation = validateCopyInputs(data.totalCopies, data.copiesAvailable);
+  const errorEl = qs('#copies-error');
+  if (!validation.ok) {
+    if (errorEl) errorEl.textContent = validation.msg;
+    return;
+  }
   const payload = {
     title: data.title,
     isbn: data.isbn,
     category: data.category || null,
     publicationDate: data.publicationDate || null,
-    copiesAvailable: data.copiesAvailable ? Number(data.copiesAvailable) : undefined,
-    totalCopies: data.totalCopies ? Number(data.totalCopies) : undefined,
+    copiesAvailable: validation.avail,
+    totalCopies: validation.total,
     cover: data.cover || null,
     description: data.description || null
   };
   try {
     await api('/books', { method: 'POST', body: JSON.stringify(payload) });
     e.target.reset();
+    availableTouched = false;
+    qs('#add-book-submit').disabled = true;
+    if (errorEl) errorEl.textContent = '';
     await fetchBooks();
     renderAdminBooks();
     showMessage('Book added');
@@ -656,12 +868,24 @@ async function addBook(e) {
 }
 
 async function deleteBook(isbn) {
-  try {
-    await api(`/books/${encodeURIComponent(isbn)}`, { method: 'DELETE' });
-    await fetchBooks();
-    renderAdminBooks();
-    showMessage('Book deleted');
-  } catch (err) { showMessage(err.message); }
+  // Check for active loans/reservations before deletion
+  const hasActiveLoan = state.admin.loans?.some((l) => l.isbn === isbn && !l.returnDate);
+  const hasActiveRes = state.admin.reservations?.some((r) => r.isbn === isbn && ['Pending','Ready'].includes(r.status));
+  const warning = hasActiveLoan || hasActiveRes
+    ? 'Cannot delete title: active loans/reservations exist.'
+    : 'This will delete the entire title. Continue?';
+  if (hasActiveLoan || hasActiveRes) {
+    showMessage(warning);
+    return;
+  }
+  openConfirm(warning, async () => {
+    try {
+      await api(`/books/${encodeURIComponent(isbn)}`, { method: 'DELETE' });
+      await fetchBooks();
+      renderAdminBooks();
+      showMessage('Book deleted');
+    } catch (err) { showMessage(err.message); }
+  });
 }
 
 async function addMember(e) {
@@ -721,6 +945,7 @@ function fillMemberSelects() {
   const memberSel = qs('#issue-member');
   const loanSel = qs('#return-loan');
   const fineSel = qs('#fine-member');
+  const editMemberSel = qs('#admin-member-edit');
   if (memberSel) {
     memberSel.innerHTML = `<option value="">Select member</option>` + state.admin.members.map((m) =>
       `<option value="${m.memberId}">${m.fullName || m.username} (${m.memberId})</option>`
@@ -733,6 +958,11 @@ function fillMemberSelects() {
   }
   if (fineSel) {
     fineSel.innerHTML = `<option value="">Select member</option>` + state.admin.members.map((m) =>
+      `<option value="${m.memberId}">${m.fullName || m.username} (${m.memberId})</option>`
+    ).join('');
+  }
+  if (editMemberSel) {
+    editMemberSel.innerHTML = `<option value="">Select member</option>` + state.admin.members.map((m) =>
       `<option value="${m.memberId}">${m.fullName || m.username} (${m.memberId})</option>`
     ).join('');
   }
@@ -779,6 +1009,7 @@ function wireEvents() {
     const isSignIn = tab.id === 'tab-signin';
     qs('#signin-form').classList.toggle('hidden', !isSignIn);
     qs('#signup-form').classList.toggle('hidden', isSignIn);
+    showMessage(isSignIn ? 'Sign in' : 'Sign up');
   }));
   qs('#logout-btn').addEventListener('click', () => handleLogout());
   qs('#menu-toggle').addEventListener('click', () => qs('#sidebar').classList.toggle('open'));
@@ -802,18 +1033,75 @@ function wireEvents() {
     qs(`.tab-panel[data-panel="${target}"]`).classList.remove('hidden');
   }));
   qs('#admin-book-form').addEventListener('submit', addBook);
+  const totalInput = qs('#total-copies');
+  const availInput = qs('#available-copies');
+  const copiesError = qs('#copies-error');
+  const addSubmit = qs('#add-book-submit');
+  const syncBtn = qs('#sync-available');
+
+  function validateAddForm() {
+    if (!totalInput || !availInput || !addSubmit) return;
+    const validation = validateCopyInputs(totalInput.value, availInput.value);
+    if (!validation.ok) {
+      if (copiesError) copiesError.textContent = validation.msg;
+      addSubmit.disabled = true;
+    } else {
+      if (copiesError) copiesError.textContent = '';
+      addSubmit.disabled = false;
+    }
+  }
+
+  if (totalInput && availInput) {
+    totalInput.addEventListener('input', () => {
+      if (!availableTouched) {
+        availInput.value = totalInput.value;
+      }
+      validateAddForm();
+    });
+    availInput.addEventListener('input', () => {
+      availableTouched = true;
+      validateAddForm();
+    });
+  }
+  if (syncBtn && totalInput && availInput) {
+    syncBtn.addEventListener('click', () => {
+      availInput.value = totalInput.value;
+      availableTouched = true;
+      validateAddForm();
+    });
+  }
+  validateAddForm();
   qs('#admin-member-form').addEventListener('submit', addMember);
+  qs('#admin-member-edit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    const memberId = qs('#admin-member-edit').value;
+    if (!memberId) { showMessage('Select member to edit'); return; }
+    try {
+      await api(`/members/${memberId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: data.name || undefined,
+          phone: data.phone || undefined,
+          address: data.address || undefined
+        })
+      });
+      e.target.reset();
+      await fetchAdminMembers();
+      showMessage('Member updated');
+    } catch (err) { showMessage(err.message); }
+  });
   qs('#issue-form').addEventListener('submit', issueBook);
   qs('#return-form').addEventListener('submit', returnFromAdmin);
   qs('#admin-fine-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
-    if (!data.fineAmount || !data.memberId) { showMessage('Select member and amount'); return; }
+    if (!data.fineAmount || !data.memberId || !data.loanId) { showMessage('Member, loan, and amount are required'); return; }
     try {
       await api('/fines', { method: 'POST', body: JSON.stringify({
         memberId: Number(data.memberId),
         fineAmount: Number(data.fineAmount),
-        loanId: data.loanId ? Number(data.loanId) : undefined
+        loanId: Number(data.loanId)
       }) });
       e.target.reset();
       await fetchAdminFines();
@@ -830,6 +1118,12 @@ function wireEvents() {
     const pending = state.fines.find((f) => f.paymentStatus !== 'Paid');
     if (pending) payFine(pending.fineId);
     else showMessage('No pending fines.');
+  });
+  qs('#confirm-cancel')?.addEventListener('click', closeConfirm);
+  qs('#confirm-ok')?.addEventListener('click', () => {
+    const cb = confirmCb;
+    closeConfirm();
+    cb && cb();
   });
   qsa('.view-more').forEach((link) => link.addEventListener('click', (e) => {
     e.preventDefault();
@@ -879,15 +1173,30 @@ async function bootstrapAfterAuth() {
     renderAdminFines();
     drawAdminCharts();
   } else {
-    const memberStats = await fetchMemberStats();
+    const memberStats = await fetchMemberStats().catch(() => null);
     await Promise.all([fetchBooks(), fetchMemberLoans(), fetchMemberReservations(), fetchMemberFines()]);
     renderBorrowed();
     renderReservations();
     renderMemberFines();
-    drawMemberChart(memberStats);
-    qs('#stat-borrowed').textContent = memberStats.borrowed || 0;
-    qs('#stat-reservations').textContent = memberStats.reservations || 0;
-    qs('#stat-fines').textContent = `$${Number(memberStats.finesDue || 0).toFixed(2)}`;
+    const fallbackStats = (() => {
+      const catCounts = {};
+      state.loans.forEach((l) => {
+        const b = state.bookMap?.get(l.isbn);
+        const cat = b?.category || 'General';
+        catCounts[cat] = (catCounts[cat] || 0) + 1;
+      });
+      return {
+        borrowed: state.loans.filter((l) => !l.returnDate).length,
+        reservations: state.reservations.length,
+        finesDue: state.fines.filter((f) => f.paymentStatus !== 'Paid').reduce((s,f)=>s+Number(f.fineAmount||0),0),
+        categoryDistribution: Object.entries(catCounts).map(([label,value])=>({label,value}))
+      };
+    })();
+    const stats = memberStats || fallbackStats;
+    drawMemberChart(stats);
+    qs('#stat-borrowed').textContent = stats.borrowed || 0;
+    qs('#stat-reservations').textContent = stats.reservations || 0;
+    qs('#stat-fines').textContent = `$${Number(stats.finesDue || 0).toFixed(2)}`;
   }
 }
 
@@ -900,3 +1209,17 @@ async function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+// Confirm modal helpers
+function openConfirm(message, onConfirm) {
+  const modal = qs('#confirm-modal');
+  if (!modal) return onConfirm?.();
+  qs('#confirm-message').textContent = message;
+  modal.classList.remove('hidden');
+  confirmCb = onConfirm;
+}
+function closeConfirm() {
+  const modal = qs('#confirm-modal');
+  if (modal) modal.classList.add('hidden');
+  confirmCb = null;
+}

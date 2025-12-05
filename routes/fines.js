@@ -38,6 +38,7 @@ router.get('/me', authMiddleware, requireRole('Member'), async (req, res) => {
 
 router.patch('/:id/pay', authMiddleware, async (req, res) => {
   const id = Number(req.params.id);
+  const amount = req.body?.amount !== undefined ? Number(req.body.amount) : null;
   const fine = await get('SELECT * FROM fines WHERE fineId = ?', [id]);
   if (!fine) return sendError(res, 'Fine not found', 'not_found', 404);
   const member = await memberForUser(req.user.id);
@@ -46,7 +47,16 @@ router.patch('/:id/pay', authMiddleware, async (req, res) => {
       return sendError(res, 'Cannot pay other member fines', 'forbidden', 403);
     }
   }
-  await run(`UPDATE fines SET paymentStatus = 'Paid' WHERE fineId = ?`, [id]);
+  if (amount !== null && amount < Number(fine.fineAmount || 0)) {
+    const remaining = Number(fine.fineAmount || 0) - amount;
+    await run('UPDATE fines SET fineAmount = ?, paymentStatus = ? WHERE fineId = ?', [
+      remaining,
+      remaining === 0 ? 'Paid' : fine.paymentStatus,
+      id
+    ]);
+  } else {
+    await run(`UPDATE fines SET fineAmount = 0, paymentStatus = 'Paid' WHERE fineId = ?`, [id]);
+  }
   const updated = await get('SELECT * FROM fines WHERE fineId = ?', [id]);
   return sendSuccess(res, updated);
 });
@@ -80,15 +90,19 @@ router.put('/:id/reduce', authMiddleware, requireRole('Admin'), async (req, res)
 
 // Admin can add a fine manually
 router.post('/', authMiddleware, requireRole('Admin'), async (req, res) => {
-  const { memberId, loanId, fineAmount, note } = req.body || {};
-  if (!memberId || fineAmount === undefined) return sendError(res, 'memberId and fineAmount are required');
+  const { memberId, loanId, fineAmount } = req.body || {};
+  if (!memberId || fineAmount === undefined || loanId === undefined) {
+    return sendError(res, 'memberId, loanId and fineAmount are required');
+  }
   const member = await get('SELECT * FROM members WHERE memberId = ?', [memberId]);
   if (!member) return sendError(res, 'Member not found', 'not_found', 404);
+  const loan = await get('SELECT * FROM loans WHERE loanId = ?', [loanId]);
+  if (!loan) return sendError(res, 'Loan not found', 'not_found', 404);
   const amount = Number(fineAmount);
   const fineDate = new Date().toISOString();
   const result = await run(
     `INSERT INTO fines (loanId, memberId, fineAmount, fineDate, paymentStatus) VALUES (?, ?, ?, ?, 'Pending')`,
-    [loanId || null, memberId, amount, fineDate]
+    [loanId, memberId, amount, fineDate]
   );
   const fine = await get('SELECT * FROM fines WHERE fineId = ?', [result.id]);
   return sendSuccess(res, fine, 201);

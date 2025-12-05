@@ -9,7 +9,7 @@ Two-role (Member, Librarian) library system that matches the PDF UX: left sideba
 
 ## Seeded Credentials
 - Librarian: `admin` / `admin123`
-- Members (password `password`): `mohannad`, `noureen`, `raneem`, `habiba`, `maryam`, `ethar`, `forat`
+- Members: `mohannad`/`password1`, `noureen`/`password2`, `raneem`/`password3`, `habiba`/`password4`, `maryam`/`password5`, `ethar`/`password6`, `forat`/`password7`
 
 ## Flows
 - **Auth**: Sign up (member), Sign in (member/librarian by email), JWT stored locally. `/auth/logout` is stateless (drop token).

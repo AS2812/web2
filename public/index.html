@@ -147,7 +147,7 @@
           <input name="lastName" placeholder="Last Name" />
           <input name="phone" placeholder="Phone Number" />
           <input name="email" type="email" placeholder="Email" />
-          <input name="amount" placeholder="Amount to pay $" />
+          <input id="fine-pay-amount" name="amount" placeholder="Amount to pay $" />
           <button class="primary-btn" type="submit">Confirm</button>
         </form>
         <table class="data-table">
@@ -186,18 +186,23 @@
           </div>
         </div>
         <div class="tab-panel hidden" data-panel="add-book">
-          <form id="admin-book-form" class="form-grid">
-            <input name="title" placeholder="Book Title" required />
-            <input name="author" placeholder="Author Name(s)" />
-            <input name="isbn" placeholder="ISBN" required />
-            <input name="category" placeholder="Category / Genre" />
-            <input name="publicationDate" type="date" placeholder="Publication Date" />
-            <input name="copiesAvailable" type="number" min="0" placeholder="Copies Available" />
-            <input name="totalCopies" type="number" min="1" placeholder="Total Copies" />
-            <input name="cover" placeholder="Cover URL" />
-            <textarea name="description" placeholder="Description"></textarea>
-            <button class="primary-btn" type="submit">Add Book</button>
-          </form>
+        <form id="admin-book-form" class="form-grid">
+          <input name="title" placeholder="Book Title" required />
+          <input name="author" placeholder="Author Name(s)" />
+          <input name="isbn" placeholder="ISBN" required />
+          <input name="category" placeholder="Category / Genre" />
+          <input name="publicationDate" type="date" placeholder="Publication Date" />
+          <input id="total-copies" name="totalCopies" type="number" min="0" step="1" placeholder="Total Copies" required />
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input id="available-copies" name="copiesAvailable" type="number" min="0" step="1" placeholder="Available Copies" required />
+            <button id="sync-available" class="secondary-btn" type="button">Set Available = Total</button>
+          </div>
+          <small id="copies-hint" class="muted">Total = owned copies. Available = borrowable now. Must be integers, available ≤ total.</small>
+          <div id="copies-error" class="muted" style="color:#c84f4f;"></div>
+          <input name="cover" placeholder="Cover URL" />
+          <textarea name="description" placeholder="Description"></textarea>
+          <button id="add-book-submit" class="primary-btn" type="submit" disabled>Add Book</button>
+        </form>
         </div>
         <div class="tab-panel hidden" data-panel="register-member">
           <form id="admin-member-form" class="form-grid">
@@ -237,6 +242,13 @@
 
       <section id="admin-members" class="section">
         <div class="section-header"><h2>Members</h2></div>
+        <form id="admin-member-edit-form" class="form-grid">
+          <select id="admin-member-edit" required></select>
+          <input name="name" placeholder="Full Name" />
+          <input name="phone" placeholder="Phone" />
+          <input name="address" placeholder="Address" />
+          <button class="primary-btn" type="submit">Update Member</button>
+        </form>
         <div id="admin-members-grid" class="card-grid"></div>
       </section>
 
@@ -265,7 +277,7 @@
         <form id="admin-fine-form" class="form-grid">
           <select id="fine-member" name="memberId" required></select>
           <input name="fineAmount" type="number" min="0" step="0.01" placeholder="Amount" required />
-          <input name="loanId" type="number" min="1" placeholder="Loan ID (optional)" />
+          <input name="loanId" type="number" min="1" placeholder="Loan ID" required />
           <button class="primary-btn" type="submit">Add Fine</button>
         </form>
         <table class="data-table">
@@ -274,6 +286,17 @@
         </table>
       </section>
     </main>
+  </div>
+
+  <!-- Confirm Modal -->
+  <div id="confirm-modal" class="modal hidden">
+    <div class="modal-content" style="max-width:400px;">
+      <p id="confirm-message" style="margin:0 0 12px 0; font-weight:600;"></p>
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button id="confirm-cancel" class="secondary-btn" type="button">Cancel</button>
+        <button id="confirm-ok" class="primary-btn" type="button">Yes, Delete</button>
+      </div>
+    </div>
   </div>
 
   <div id="book-modal" class="modal hidden">
