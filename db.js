@@ -86,6 +86,7 @@ async function init() {
     CREATE TABLE IF NOT EXISTS books (
       isbn TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      author TEXT,
       category TEXT,
       publicationDate TEXT,
       copiesAvailable INTEGER DEFAULT 1,
@@ -96,6 +97,8 @@ async function init() {
       FOREIGN KEY(publisherId) REFERENCES publishers(id)
     )
   `);
+  // add author column if missing
+  await run(`ALTER TABLE books ADD COLUMN author TEXT`, []).catch(() => {});
 
   await run(`
     CREATE TABLE IF NOT EXISTS wrote (
@@ -140,19 +143,40 @@ async function init() {
       fineAmount REAL NOT NULL,
       originalAmount REAL,
       remainingAmount REAL,
+      bookId TEXT,
+      reason TEXT,
       fineDate TEXT NOT NULL,
       paymentStatus TEXT NOT NULL,
       FOREIGN KEY(loanId) REFERENCES loans(loanId),
-      FOREIGN KEY(memberId) REFERENCES members(memberId)
+      FOREIGN KEY(memberId) REFERENCES members(memberId),
+      FOREIGN KEY(bookId) REFERENCES books(isbn)
     )
   `);
 
   // Ensure new columns exist for backward compatibility
   await run(`ALTER TABLE fines ADD COLUMN originalAmount REAL`, []).catch(() => {});
   await run(`ALTER TABLE fines ADD COLUMN remainingAmount REAL`, []).catch(() => {});
+  await run(`ALTER TABLE fines ADD COLUMN bookId TEXT`, []).catch(() => {});
+  await run(`ALTER TABLE fines ADD COLUMN reason TEXT`, []).catch(() => {});
   // Backfill originalAmount / remainingAmount if missing (keep current fineAmount as remaining)
   await run(`UPDATE fines SET originalAmount = fineAmount WHERE originalAmount IS NULL`);
   await run(`UPDATE fines SET remainingAmount = fineAmount WHERE remainingAmount IS NULL`);
+  await run(
+    `UPDATE fines SET bookId = (SELECT isbn FROM loans WHERE loans.loanId = fines.loanId) WHERE bookId IS NULL`
+  );
+  await run(`UPDATE fines SET paymentStatus = 'open' WHERE paymentStatus NOT IN ('paid','waived')`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS payments (
+      paymentId INTEGER PRIMARY KEY AUTOINCREMENT,
+      memberId INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      appliedAt TEXT NOT NULL,
+      payerId INTEGER,
+      allocations TEXT NOT NULL,
+      FOREIGN KEY(memberId) REFERENCES members(memberId)
+    )
+  `);
 }
 
 async function ensureSeedUser({ username, password, role, email, name }) {
@@ -296,9 +320,9 @@ async function seed() {
     );
 
     await run(
-      `INSERT INTO fines (loanId, memberId, fineAmount, originalAmount, remainingAmount, fineDate, paymentStatus)
-       VALUES (?, ?, ?, ?, ?, ?, 'Pending')`,
-      [loanRes.id, memberOne.memberId, 5, 5, 5, now.toISOString()]
+      `INSERT INTO fines (loanId, memberId, bookId, fineAmount, originalAmount, remainingAmount, fineDate, paymentStatus, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 'overdue')`,
+      [loanRes.id, memberOne.memberId, sampleBook.isbn, 5, 5, 5, now.toISOString()]
     );
   }
 

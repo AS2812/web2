@@ -17,7 +17,10 @@ router.get('/admin', authMiddleware, requireRole('Admin'), async (_req, res) => 
     "SELECT COUNT(*) as count FROM reservations WHERE status IN ('Pending','Ready')"
   );
   const pendingFines = await get(
-    "SELECT COUNT(*) as count FROM fines WHERE paymentStatus != 'Paid'"
+    "SELECT COUNT(DISTINCT memberId) as count FROM fines WHERE paymentStatus = 'open' AND remainingAmount > 0"
+  );
+  const totalOpenFines = await get(
+    "SELECT COALESCE(SUM(remainingAmount),0) as total FROM fines WHERE paymentStatus = 'open' AND remainingAmount > 0"
   );
 
   const borrowByMonth = await get(
@@ -51,6 +54,7 @@ router.get('/admin', authMiddleware, requireRole('Admin'), async (_req, res) => 
     overdueLoans: overdueLoans.count,
     pendingReservations: pendingReservations.count,
     pendingFines: pendingFines.count,
+    totalUnpaidFines: Number(totalOpenFines.total || 0),
     borrowByMonth,
     categoryDistribution: catCounts
   });
@@ -69,7 +73,7 @@ router.get('/member', authMiddleware, async (req, res) => {
     [member.memberId]
   );
   const fines = await get(
-    "SELECT COALESCE(SUM(fineAmount),0) as total FROM fines WHERE memberId = ? AND paymentStatus != 'Paid'",
+    "SELECT COALESCE(SUM(remainingAmount),0) as total FROM fines WHERE memberId = ? AND paymentStatus = 'open'",
     [member.memberId]
   );
   const catCounts = await all(

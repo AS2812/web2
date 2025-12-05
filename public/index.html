@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://covers.openlibrary.org https://picsum.photos data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://covers.openlibrary.org https://picsum.photos data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://openlibrary.org;">
   <title>Library Management System</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -141,7 +141,9 @@
         <div class="section-header"><h2>Fines & Payments</h2></div>
         <div class="stat-row">
           <div class="stat-card"><p>Unpaid Fines</p><h3 id="member-fine-total">$0</h3></div>
-          <button id="pay-first-fine" class="primary-btn" type="button">Pay First Pending</button>
+          <select id="member-fine-select" class="input" style="min-width:220px;">
+            <option value="">Select a fine to pay</option>
+          </select>
         </div>
         <form id="fine-pay-form" class="form-grid">
           <input name="firstName" placeholder="First Name" />
@@ -263,28 +265,39 @@
 
       <section id="admin-fines" class="section">
         <div class="section-header"><h2>Fines Management</h2></div>
-        <div class="stat-row">
-          <div class="stat-card"><p>Total Unpaid Fines</p><h3 id="fine-total">$0</h3></div>
-          <div class="stat-card"><p>Members with Fines</p><h3 id="fine-members">0</h3></div>
-          <div class="stat-card"><p>Books Overdue</p><h3 id="fine-overdue">0</h3></div>
-          <div class="stat-card fine-calc">
-            <p>Fine Calculator (10 per day)</p>
-            <div class="row two">
-              <input id="calc-days" type="number" min="0" placeholder="Days" />
-              <input id="calc-result" placeholder="Total" readonly />
+        <div class="fines-grid">
+          <div class="fines-main">
+            <div class="stat-row">
+              <div class="stat-card"><p>Total Unpaid Fines</p><h3 id="fine-total">$0</h3></div>
+              <div class="stat-card"><p>Members with Fines</p><h3 id="fine-members">0</h3></div>
+              <div class="stat-card"><p>Books Overdue</p><h3 id="fine-overdue">0</h3></div>
             </div>
+            <table class="data-table">
+              <thead><tr><th>Member</th><th>Book</th><th>Amount</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody id="admin-fine-rows"></tbody>
+            </table>
+          </div>
+          <div class="panel fine-calc-card">
+            <div class="panel-head">
+              <h4>Fine Calculator (10 per day)</h4>
+              <span class="muted small">Select borrowed book</span>
+            </div>
+            <form id="admin-fine-form" class="form-grid">
+              <select id="fine-member" name="memberId" required></select>
+              <select id="fine-loan" name="loanId" required>
+                <option value="">Select Borrowed Book</option>
+              </select>
+              <input name="fineAmount" type="number" min="0" step="0.01" placeholder="Amount" required />
+              <input name="reason" placeholder="Reason (overdue / damage / lost)" />
+              <div class="row two">
+                <input id="calc-days" type="number" min="0" placeholder="Days (optional)" />
+                <input id="calc-result" placeholder="Computed Amount" readonly />
+              </div>
+              <button id="fine-submit" class="primary-btn" type="submit">Add Fine</button>
+            </form>
+            <p id="fine-form-hint" class="muted small"></p>
           </div>
         </div>
-        <form id="admin-fine-form" class="form-grid">
-          <select id="fine-member" name="memberId" required></select>
-          <input name="fineAmount" type="number" min="0" step="0.01" placeholder="Amount" required />
-          <input name="loanId" type="number" min="1" placeholder="Loan ID" required />
-          <button class="primary-btn" type="submit">Add Fine</button>
-        </form>
-        <table class="data-table">
-          <thead><tr><th>Member</th><th>Book</th><th>Amount</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody id="admin-fine-rows"></tbody>
-        </table>
       </section>
     </main>
   </div>
@@ -317,6 +330,19 @@
       <div class="modal-actions">
         <button id="modal-reserve" class="secondary-btn" type="button">Reserve</button>
         <button id="modal-borrow" class="primary-btn" type="button">Borrow now</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pay-modal" class="modal hidden">
+    <div class="modal-content" style="max-width:420px;">
+      <button class="modal-close" type="button" onclick="closePayModal()">×</button>
+      <h3>Apply Payment</h3>
+      <p id="pay-meta" class="muted small"></p>
+      <input id="pay-amount-input" class="input" type="number" min="0" step="0.01" placeholder="Amount" />
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+        <button class="secondary-btn" type="button" onclick="closePayModal()">Cancel</button>
+        <button class="primary-btn" type="button" onclick="confirmPayModal()">Apply Payment</button>
       </div>
     </div>
   </div>

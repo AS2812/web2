@@ -14,6 +14,7 @@ try {
 } catch (err) {
   coverCacheStorage = {};
 }
+const searchCacheMem = new Map();
 
 const state = {
   token: localStorage.getItem('token'),
@@ -155,9 +156,9 @@ function handleLogout(message) {
 // Fetchers
 async function fetchProfile() {
   const profile = await api('/auth/me');
-  state.user = profile.user;
-  state.memberId = profile.memberId;
-  state.role = profile.user.role;
+  state.user = profile.user || {};
+  state.memberId = profile.memberId || null;
+  state.role = profile.user?.role || null;
   renderProfile();
 }
 
@@ -256,6 +257,32 @@ function setCachedCover(isbn, url) {
   coverCacheStorage[clean] = url;
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(coverCacheStorage)); } catch {}
 }
+
+async function fetchOpenLibrarySearchCover(book) {
+  const key = `${book?.title || ''}|${book?.authors?.map?.((a) => a.name).join(' ') || book?.author || ''}`.trim();
+  if (searchCacheMem.has(key)) return searchCacheMem.get(key);
+  if (!key) return null;
+  try {
+    const resp = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(key)}`);
+    if (!resp.ok) throw new Error('search failed');
+    const data = await resp.json();
+    const doc = data?.docs?.find((d) => d.cover_i || (d.isbn && d.isbn.length));
+    if (!doc) return null;
+    if (doc.cover_i) {
+      const url = `https://covers.openlibrary.org/b/id/${doc.cover_i}-${COVER_SIZE}.jpg?default=false`;
+      searchCacheMem.set(key, url);
+      return url;
+    }
+    if (doc.isbn && doc.isbn.length) {
+      const url = buildOpenLibraryUrl(doc.isbn[0]);
+      searchCacheMem.set(key, url);
+      return url;
+    }
+  } catch (err) {
+    console.warn('OpenLibrary search failed', err);
+  }
+  return null;
+}
 function coverCandidateList(book) {
   const list = [];
   if (book?.cover) list.push(book.cover);
@@ -265,7 +292,7 @@ function coverCandidateList(book) {
   if (isbn10) list.push(buildOpenLibraryUrl(isbn10));
   return list;
 }
-function setCover(imgEl, book) {
+async function setCover(imgEl, book) {
   const title = book?.title || 'Book';
   const isbn13 = book?.isbn13 || book?.isbn;
   const isbn10 = book?.isbn10;
@@ -274,6 +301,11 @@ function setCover(imgEl, book) {
   const cached = cacheKey ? getCachedCover(cacheKey) : null;
   if (cached) candidates.push(cached);
   candidates.push(...coverCandidateList(book));
+  // If we still don't have a real candidate, try search by title/author
+  if (candidates.length === 0 || (candidates.length === 1 && candidates[0] === PLACEHOLDER)) {
+    const searched = await fetchOpenLibrarySearchCover(book);
+    if (searched) candidates.unshift(searched);
+  }
   candidates.push(PLACEHOLDER); // final fallback data URI
 
   imgEl.loading = 'lazy';
@@ -447,11 +479,22 @@ function renderMemberFines() {
   const tbody = qs('#fine-rows');
   tbody.innerHTML = '';
   let total = 0;
+  const fineSelect = qs('#member-fine-select');
+  if (fineSelect) fineSelect.innerHTML = '<option value="">Select a fine to pay</option>';
   state.fines.forEach((fine) => {
     const loan = state.loans.find((l) => l.loanId === fine.loanId);
     const book = loan && state.bookMap ? state.bookMap.get(loan.isbn) : null;
-    const statusClass = fine.paymentStatus === 'Paid' ? 'ready' : 'overdue';
-    if (fine.paymentStatus !== 'Paid') total += Number(fine.fineAmount || 0);
+  const paid = String(fine.paymentStatus || '').toLowerCase() === 'paid';
+  const statusClass = paid ? 'ready' : 'overdue';
+  if (!paid) {
+    total += Number(fine.remainingAmount ?? fine.fineAmount ?? 0);
+    if (fineSelect) {
+      const opt = document.createElement('option');
+      opt.value = fine.fineId;
+      opt.textContent = `${book?.title || loan?.isbn || 'Fine'} - $${Number(fine.remainingAmount ?? fine.fineAmount ?? 0).toFixed(2)}`;
+      fineSelect.append(opt);
+    }
+  }
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>
@@ -469,8 +512,8 @@ function renderMemberFines() {
     const thumb = tr.querySelector('.thumb');
     if (thumb) setCover(thumb, book || { isbn: loan?.isbn, title: loan?.isbn });
     const amountCell = tr.children[3];
-    amountCell.textContent = `$${Number(fine.fineAmount || 0).toFixed(2)}`;
-    if (fine.paymentStatus !== 'Paid') {
+    amountCell.textContent = `$${Number((fine.remainingAmount ?? fine.fineAmount ?? 0)).toFixed(2)}`;
+    if (!paid) {
       const input = document.createElement('input');
       input.type = 'number';
       input.min = '0';
@@ -485,7 +528,7 @@ function renderMemberFines() {
         payFine(fine.fineId, amt);
       });
       amountCell.innerHTML = '';
-      amountCell.append(`$${Number(fine.fineAmount || 0).toFixed(2)}`, document.createElement('br'), input);
+      amountCell.append(`$${Number((fine.remainingAmount ?? fine.fineAmount ?? 0)).toFixed(2)}`, document.createElement('br'), input);
       tr.lastElementChild.append(payBtn);
     }
     tbody.append(tr);
@@ -504,7 +547,7 @@ function renderAdminDashboard() {
   const resEl = qs('#dash-reservations');
   if (resEl) resEl.textContent = s.pendingReservations ?? state.admin.reservations.length;
   const finesEl = qs('#dash-fines');
-  if (finesEl) finesEl.textContent = s.pendingFines ?? state.admin.fines.filter((f) => f.paymentStatus !== 'Paid').length;
+  if (finesEl) finesEl.textContent = s.totalUnpaidFines ?? state.admin.fines.reduce((sum,f)=>sum+Number((f.remainingAmount ?? f.fineAmount ?? 0)),0);
 }
 
 function renderAdminBooks(list = state.books) {
@@ -672,8 +715,9 @@ function renderAdminFines() {
   let total = 0;
   const membersWithFines = new Set();
   state.admin.fines.forEach((fine) => {
-    if (fine.paymentStatus !== 'Paid') {
-      total += Number(fine.fineAmount || 0);
+    const paid = String(fine.paymentStatus || '').toLowerCase() === 'paid';
+    if (!paid) {
+      total += Number((fine.remainingAmount ?? fine.fineAmount ?? 0));
       membersWithFines.add(fine.username);
     }
     const loan = state.admin.loans.find((l) => l.loanId === fine.loanId);
@@ -687,7 +731,7 @@ function renderAdminFines() {
           <span>${fine.title || book?.title || '-'}</span>
         </div>
       </td>
-      <td>$${Number(fine.fineAmount || 0).toFixed(2)}</td>
+      <td>$${Number((fine.remainingAmount ?? fine.fineAmount ?? 0)).toFixed(2)}</td>
       <td>${formatDate(fine.fineDate)}</td>
       <td class="status ${fine.paymentStatus.toLowerCase()}">${fine.paymentStatus}</td>
       <td></td>
@@ -699,26 +743,9 @@ function renderAdminFines() {
     const pay = document.createElement('button');
     pay.className = 'primary-btn';
     pay.textContent = 'Pay';
-    pay.addEventListener('click', async () => {
-      const remaining = Number(fine.fineAmount || 0);
-      await api(`/fines/${fine.fineId}/pay`, { method: 'PATCH', body: JSON.stringify({ amount: remaining }) });
-      await fetchAdminFines();
-      showMessage('Fine paid');
-    });
-    const reduceInput = document.createElement('input');
-    reduceInput.type = 'number';
-    reduceInput.min = '0';
-    reduceInput.step = '0.01';
-    reduceInput.placeholder = 'Reduce by';
-    reduceInput.style.width = '90px';
-    const reduce = document.createElement('button');
-    reduce.className = 'secondary-btn';
-    reduce.textContent = 'Reduce';
-    reduce.addEventListener('click', () => {
-      const amt = Number(reduceInput.value || 0);
-      if (!Number.isNaN(amt)) reduceFine(fine.fineId, amt);
-    });
-    actions.append(pay, reduceInput, reduce);
+    pay.disabled = paid;
+    pay.addEventListener('click', () => openPayModal(fine));
+    actions.append(pay);
     tr.lastElementChild.append(actions);
     tbody.append(tr);
   });
@@ -849,6 +876,7 @@ async function reduceFine(fineId, amount) {
 
 let availableTouched = false; // for auto-fill behavior on add form
 let confirmCb = null; // confirm modal callback
+let selectedPayFine = null;
 
 function parseIntSafe(val) {
   const n = Number(val);
@@ -989,6 +1017,10 @@ function fillMemberSelects() {
     fineSel.innerHTML = `<option value="">Select member</option>` + state.admin.members.map((m) =>
       `<option value="${m.memberId}">${m.fullName || m.username} (${m.memberId})</option>`
     ).join('');
+    const fineLoan = qs('#fine-loan');
+    if (fineLoan) {
+      fineLoan.innerHTML = '<option value="">Select Borrowed Book</option>';
+    }
   }
   if (editMemberSel) {
     editMemberSel.innerHTML = `<option value="">Select member</option>` + state.admin.members.map((m) =>
@@ -1013,6 +1045,34 @@ function setRoleUI() {
     qs('#member-home').classList.add('visible');
     qsa('#member-nav .nav-item').forEach((btn, idx) => btn.classList.toggle('active', idx === 0));
   }
+}
+
+function openPayModal(fine) {
+  selectedPayFine = fine;
+  const modal = qs('#pay-modal');
+  const meta = qs('#pay-meta');
+  const input = qs('#pay-amount-input');
+  const remaining = Number((fine.remainingAmount ?? fine.fineAmount ?? 0));
+  if (meta) meta.textContent = `${fine.username || ''} — Remaining $${remaining.toFixed(2)}`;
+  if (input) {
+    input.value = remaining.toFixed(2);
+    input.max = remaining;
+  }
+  modal?.classList.remove('hidden');
+}
+function closePayModal() {
+  selectedPayFine = null;
+  qs('#pay-modal')?.classList.add('hidden');
+}
+async function confirmPayModal() {
+  if (!selectedPayFine) { closePayModal(); return; }
+  const input = qs('#pay-amount-input');
+  const amt = Number(input?.value || 0);
+  if (!amt || amt < 0) { showMessage('Enter amount to pay'); return; }
+  await api(`/fines/${selectedPayFine.fineId}/pay`, { method: 'PATCH', body: JSON.stringify({ amount: amt }) });
+  await Promise.all([fetchAdminFines(), fetchAdminStats()]);
+  closePayModal();
+  showMessage('Payment applied');
 }
 
 function handleSearchBooks(e) {
@@ -1122,6 +1182,37 @@ function wireEvents() {
   });
   qs('#issue-form').addEventListener('submit', issueBook);
   qs('#return-form').addEventListener('submit', returnFromAdmin);
+  const fineMemberSelect = qs('#fine-member');
+  const fineLoanSelect = qs('#fine-loan');
+  const fineSubmit = qs('#fine-submit');
+  const fineHint = qs('#fine-form-hint');
+  if (fineSubmit) fineSubmit.disabled = true;
+
+  async function loadFineLoans(memberId) {
+    if (!fineLoanSelect) return;
+    fineLoanSelect.innerHTML = '<option value=\"\">Select Borrowed Book</option>';
+    if (!memberId) { if (fineSubmit) fineSubmit.disabled = true; return; }
+    const loans = await api(`/members/${memberId}/loans?status=active`);
+    if (!loans.length) {
+      if (fineHint) fineHint.textContent = 'This member has no borrowed books. You cannot add a fine.';
+      if (fineSubmit) fineSubmit.disabled = true;
+      return;
+    }
+    loans.forEach((l) => {
+      const opt = document.createElement('option');
+      opt.value = l.loanId;
+      opt.textContent = `${l.title || l.isbn} (due ${formatDate(l.dueDate)})`;
+      fineLoanSelect.append(opt);
+    });
+    if (fineHint) fineHint.textContent = '';
+    if (fineSubmit) fineSubmit.disabled = false;
+  }
+
+  fineMemberSelect?.addEventListener('change', async (e) => {
+    const memberId = e.target.value;
+    await loadFineLoans(memberId);
+  });
+
   qs('#admin-fine-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
@@ -1130,33 +1221,22 @@ function wireEvents() {
       await api('/fines', { method: 'POST', body: JSON.stringify({
         memberId: Number(data.memberId),
         fineAmount: Number(data.fineAmount),
-        loanId: Number(data.loanId)
+        loanId: Number(data.loanId),
+        reason: data.reason || 'overdue'
       }) });
       e.target.reset();
-      await fetchAdminFines();
+      await Promise.all([fetchAdminFines(), fetchAdminStats()]);
       showMessage('Fine added');
     } catch (err) { showMessage(err.message); }
   });
   qs('#fine-pay-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const amt = Number(qs('#fine-pay-amount').value || 0);
-    if (amt > 0) {
-      payFine(null, amt);
-      e.target.reset();
-    } else {
-      const pending = state.fines.find((f) => f.paymentStatus !== 'Paid');
-      if (pending) payFine(pending.fineId);
-      else showMessage('No pending fines.');
-    }
-  });
-  qs('#pay-first-fine').addEventListener('click', () => {
-    const amt = Number(qs('#fine-pay-amount').value || 0);
-    if (amt > 0) payFine(null, amt);
-    else {
-      const pending = state.fines.find((f) => f.paymentStatus !== 'Paid');
-      if (pending) payFine(pending.fineId);
-      else showMessage('No pending fines.');
-    }
+    const fineId = qs('#member-fine-select')?.value;
+    if (!fineId) { showMessage('Select a fine to pay.'); return; }
+    if (amt <= 0) { showMessage('Enter an amount to pay.'); return; }
+    payFine(Number(fineId), amt);
+    e.target.reset();
   });
   qs('#confirm-cancel')?.addEventListener('click', closeConfirm);
   qs('#confirm-ok')?.addEventListener('click', () => {
@@ -1227,7 +1307,7 @@ async function bootstrapAfterAuth() {
       return {
         borrowed: state.loans.filter((l) => !l.returnDate).length,
         reservations: state.reservations.length,
-        finesDue: state.fines.filter((f) => f.paymentStatus !== 'Paid').reduce((s,f)=>s+Number(f.fineAmount||0),0),
+        finesDue: state.fines.filter((f) => String(f.paymentStatus || '').toLowerCase() !== 'paid').reduce((s,f)=>s+Number((f.remainingAmount ?? f.fineAmount ?? 0)),0),
         categoryDistribution: Object.entries(catCounts).map(([label,value])=>({label,value}))
       };
     })();

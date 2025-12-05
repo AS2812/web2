@@ -1,19 +1,22 @@
 :root {
-  --nav: #34477d;
-  --nav-accent: #9ec2f3;
-  --primary: #3b4f93;
-  --primary-2: #2f3f75;
-  --muted: #62708d;
   --bg: #f6f8fb;
-  --panel: #ffffff;
-  --pill: #d9f0ff;
+  --card: #ffffff;
+  --text: #1f2735;
+  --muted: #5c6374;
+  --primary: #335dcb;
+  --primary-2: #26479e;
   --danger: #c84f4f;
   --success: #1f9d5e;
+  --border: #e0e5ef;
+  --pill: #d9f0ff;
+  --shadow: 0 1px 6px rgba(0,0,0,0.08);
+  --nav: #34477d;
+  --nav-accent: #9ec2f3;
   font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: #1f2735; }
+body { margin: 0; background: var(--bg); color: var(--text); }
 
 .topbar {
   display: flex;
@@ -87,10 +90,14 @@ body { margin: 0; background: var(--bg); color: #1f2735; }
 .stat-card h3 { margin: 6px 0 0 0; }
 .view-more { color: var(--primary); text-decoration: underline; font-weight: 600; font-size: 13px; position: absolute; bottom: 10px; right: 12px; }
 
-.panel { background: var(--panel); padding: 14px; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 14px; }
+.panel { background: var(--card); padding: 14px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 14px; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; }
 .card-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+ .fines-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+ @media (max-width: 900px) {
+   .fines-grid { grid-template-columns: 1fr; }
+ }
 /* Keep reserved cards same footprint as other book cards (avoid full-width stretch) */
 #reserved-grid.card-grid {
   grid-template-columns: repeat(auto-fill, minmax(220px, 260px));
@@ -211,6 +218,7 @@ body { margin: 0; background: var(--bg); color: #1f2735; }
   margin-bottom: 12px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
+.fine-calc-card { margin-top: 4px; }
 .modal .modal-content button.primary-btn.danger {
   background: linear-gradient(135deg, #c84f4f, #a23b3b);
 }

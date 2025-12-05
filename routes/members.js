@@ -29,6 +29,45 @@ router.get('/:id', authMiddleware, requireRole('Admin'), async (req, res) => {
   return sendSuccess(res, { member, loans, reservations, fines });
 });
 
+// Member loans (filter by status)
+router.get('/:id/loans', authMiddleware, requireRole('Admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  const status = req.query.status || 'active';
+  const member = await get('SELECT * FROM members WHERE memberId = ?', [id]);
+  if (!member) return sendError(res, 'Member not found', 'not_found', 404);
+  let where = 'l.memberId = ?';
+  const params = [id];
+  if (status === 'active') where += ' AND l.returnDate IS NULL';
+  else if (status === 'returned') where += ' AND l.returnDate IS NOT NULL';
+  const loans = await all(
+    `SELECT l.*, b.title, b.author FROM loans l
+     LEFT JOIN books b ON b.isbn = l.isbn
+     WHERE ${where}
+     ORDER BY datetime(l.borrowDate) DESC`,
+    params
+  );
+  return sendSuccess(res, loans);
+});
+
+// Member fines (for admin)
+router.get('/:id/fines', authMiddleware, requireRole('Admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  const status = req.query.status || 'all';
+  const member = await get('SELECT * FROM members WHERE memberId = ?', [id]);
+  if (!member) return sendError(res, 'Member not found', 'not_found', 404);
+  let where = 'f.memberId = ?';
+  if (status === 'open') where += " AND f.paymentStatus = 'open' AND f.remainingAmount > 0";
+  const fines = await all(
+    `SELECT f.*, b.title FROM fines f
+     LEFT JOIN loans l ON l.loanId = f.loanId
+     LEFT JOIN books b ON b.isbn = l.isbn
+     WHERE ${where}
+     ORDER BY datetime(f.fineDate) DESC`,
+    [id]
+  );
+  return sendSuccess(res, fines);
+});
+
 router.post('/', authMiddleware, requireRole('Admin'), async (req, res) => {
   const { username, email, password, name, address, phone } = req.body || {};
   if (!username || !email || !password || !name) return sendError(res, 'username, email, password, and name are required');

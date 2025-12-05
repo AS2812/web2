@@ -89,9 +89,9 @@ router.post('/return', authMiddleware, async (req, res) => {
     if (!existingFine) {
       const fineAmount = daysLate * 1;
       const fineResult = await run(
-        `INSERT INTO fines (loanId, memberId, fineAmount, originalAmount, remainingAmount, fineDate, paymentStatus)
-         VALUES (?, ?, ?, ?, ?, ?, 'Pending')`,
-        [loanId, loan.memberId, fineAmount, fineAmount, fineAmount, returnDate.toISOString()]
+        `INSERT INTO fines (loanId, memberId, bookId, fineAmount, originalAmount, remainingAmount, fineDate, paymentStatus, reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 'overdue')`,
+        [loanId, loan.memberId, loan.isbn, fineAmount, fineAmount, fineAmount, returnDate.toISOString()]
       );
       fine = await get('SELECT * FROM fines WHERE fineId = ?', [fineResult.id]);
     } else {
