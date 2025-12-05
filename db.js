@@ -210,7 +210,10 @@ async function seed() {
   }
 
   const existingBooks = await get('SELECT COUNT(*) as count FROM books');
-  if (existingBooks && existingBooks.count > 0) return;
+  if (existingBooks && existingBooks.count > 0) {
+    await ensureBookCovers();
+    return;
+  }
 
   // Authors
   const authors = [
@@ -253,7 +256,8 @@ async function seed() {
     const publicationDate = `20${(10 + (i % 15)).toString().padStart(2, '0')}-01-01`;
     const copies = 1 + (i % 4);
     const publisherId = publisherIds[i % publisherIds.length];
-    const cover = `https://picsum.photos/seed/library${i}/240/320`;
+    const seed = (isbn || `book${i}`).replace(/[^0-9a-z]/gi, '') || `book${i}`;
+    const cover = `https://picsum.photos/seed/${encodeURIComponent(seed)}/400/600`;
 
     await run(
       `INSERT INTO books (isbn, title, category, publicationDate, copiesAvailable, totalCopies, publisherId, description, cover)
@@ -286,6 +290,18 @@ async function seed() {
       `INSERT INTO fines (loanId, memberId, fineAmount, fineDate, paymentStatus) VALUES (?, ?, ?, ?, 'Pending')`,
       [loanRes.id, memberOne.memberId, 5, now.toISOString()]
     );
+  }
+
+  await ensureBookCovers();
+}
+
+async function ensureBookCovers() {
+  const rows = await all('SELECT rowid as idx, isbn, cover FROM books');
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const seed = (row.isbn || `book${i}`).replace(/[^0-9a-z]/gi, '') || `book${i}`;
+    const cover = `https://picsum.photos/seed/${encodeURIComponent(seed)}/400/600`;
+    await run('UPDATE books SET cover = ? WHERE isbn = ?', [cover, row.isbn]);
   }
 }
 

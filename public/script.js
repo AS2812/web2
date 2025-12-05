@@ -2,7 +2,9 @@ const qs = (sel) => document.querySelector(sel);
 const qsa = (sel) => Array.from(document.querySelectorAll(sel));
 const API_BASE = '';
 const COVER_SIZE = 'L';
-const PLACEHOLDER = 'https://placehold.co/600x800?text=No+Cover';
+// Inline SVG placeholder (avoids external blocking)
+const PLACEHOLDER =
+  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="100%" height="100%" fill="%23eef2f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%235b6478" font-family="Montserrat,Arial,sans-serif" font-size="24">No Cover</text></svg>';
 const CACHE_KEY = 'coverCache_v1';
 const coverCacheMem = new Map();
 let coverCacheStorage = {};
@@ -254,31 +256,49 @@ function setCachedCover(isbn, url) {
   coverCacheStorage[clean] = url;
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(coverCacheStorage)); } catch {}
 }
-function coverUrlFor(book) {
-  const cached = getCachedCover(book?.isbn);
-  if (cached) return cached;
-  return buildOpenLibraryUrl(book?.isbn);
-}
-function loadCoverIntoImg(imgEl, isbn, title = 'Book') {
-  const url = coverUrlFor({ isbn });
-  imgEl.loading = 'lazy';
-  imgEl.decoding = 'async';
-  imgEl.src = url;
-  imgEl.alt = `Cover of ${title}`;
-  imgEl.onerror = () => {
-    if (imgEl.dataset.fallback === '1') return;
-    imgEl.dataset.fallback = '1';
-    imgEl.src = PLACEHOLDER;
-    setCachedCover(isbn, PLACEHOLDER);
-  };
-  imgEl.onload = () => {
-    if (imgEl.src !== PLACEHOLDER) {
-      setCachedCover(isbn, imgEl.src);
-    }
-  };
+function coverCandidateList(book) {
+  const list = [];
+  if (book?.cover) list.push(book.cover);
+  const isbn13 = book?.isbn13 || book?.isbn;
+  const isbn10 = book?.isbn10;
+  if (isbn13) list.push(buildOpenLibraryUrl(isbn13));
+  if (isbn10) list.push(buildOpenLibraryUrl(isbn10));
+  return list;
 }
 function setCover(imgEl, book) {
-  loadCoverIntoImg(imgEl, book?.isbn, book?.title || 'Book');
+  const title = book?.title || 'Book';
+  const isbn13 = book?.isbn13 || book?.isbn;
+  const isbn10 = book?.isbn10;
+  const cacheKey = sanitizeIsbn(isbn13 || isbn10) || (book?.cover || book?.id || title);
+  const candidates = [];
+  const cached = cacheKey ? getCachedCover(cacheKey) : null;
+  if (cached) candidates.push(cached);
+  candidates.push(...coverCandidateList(book));
+  candidates.push(PLACEHOLDER); // final fallback data URI
+
+  imgEl.loading = 'lazy';
+  imgEl.decoding = 'async';
+  imgEl.alt = `Cover of ${title}`;
+
+  let idx = 0;
+  const tryNext = () => {
+    imgEl.src = candidates[Math.min(idx, candidates.length - 1)];
+    idx += 1;
+  };
+  imgEl.onerror = () => {
+    if (idx >= candidates.length) {
+      imgEl.src = PLACEHOLDER;
+      return;
+    }
+    tryNext();
+  };
+  imgEl.onload = () => {
+    const cur = imgEl.src;
+    if (cur && cur !== PLACEHOLDER && cacheKey) {
+      setCachedCover(cacheKey, cur);
+    }
+  };
+  tryNext();
 }
 
 function renderRecommendations() {
