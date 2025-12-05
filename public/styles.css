@@ -91,6 +91,11 @@ body { margin: 0; background: var(--bg); color: #1f2735; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; }
 .card-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+/* Keep reserved cards same footprint as other book cards (avoid full-width stretch) */
+#reserved-grid.card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 260px));
+  justify-content: flex-start;
+}
 .book-card, .book-tile {
   background: #d5f0f6;
   padding: 12px;
