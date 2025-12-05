@@ -138,12 +138,21 @@ async function init() {
       loanId INTEGER NOT NULL,
       memberId INTEGER NOT NULL,
       fineAmount REAL NOT NULL,
+      originalAmount REAL,
+      remainingAmount REAL,
       fineDate TEXT NOT NULL,
       paymentStatus TEXT NOT NULL,
       FOREIGN KEY(loanId) REFERENCES loans(loanId),
       FOREIGN KEY(memberId) REFERENCES members(memberId)
     )
   `);
+
+  // Ensure new columns exist for backward compatibility
+  await run(`ALTER TABLE fines ADD COLUMN originalAmount REAL`, []).catch(() => {});
+  await run(`ALTER TABLE fines ADD COLUMN remainingAmount REAL`, []).catch(() => {});
+  // Backfill originalAmount / remainingAmount if missing (keep current fineAmount as remaining)
+  await run(`UPDATE fines SET originalAmount = fineAmount WHERE originalAmount IS NULL`);
+  await run(`UPDATE fines SET remainingAmount = fineAmount WHERE remainingAmount IS NULL`);
 }
 
 async function ensureSeedUser({ username, password, role, email, name }) {
@@ -287,8 +296,9 @@ async function seed() {
     );
 
     await run(
-      `INSERT INTO fines (loanId, memberId, fineAmount, fineDate, paymentStatus) VALUES (?, ?, ?, ?, 'Pending')`,
-      [loanRes.id, memberOne.memberId, 5, now.toISOString()]
+      `INSERT INTO fines (loanId, memberId, fineAmount, originalAmount, remainingAmount, fineDate, paymentStatus)
+       VALUES (?, ?, ?, ?, ?, ?, 'Pending')`,
+      [loanRes.id, memberOne.memberId, 5, 5, 5, now.toISOString()]
     );
   }
 

@@ -699,7 +699,12 @@ function renderAdminFines() {
     const pay = document.createElement('button');
     pay.className = 'primary-btn';
     pay.textContent = 'Pay';
-    pay.addEventListener('click', () => updateFineStatus(fine.fineId, 'Paid'));
+    pay.addEventListener('click', async () => {
+      const remaining = Number(fine.fineAmount || 0);
+      await api(`/fines/${fine.fineId}/pay`, { method: 'PATCH', body: JSON.stringify({ amount: remaining }) });
+      await fetchAdminFines();
+      showMessage('Fine paid');
+    });
     const reduceInput = document.createElement('input');
     reduceInput.type = 'number';
     reduceInput.min = '0';
@@ -824,8 +829,12 @@ async function returnLoan(loanId) {
 
 async function payFine(fineId, amount) {
   try {
-    await api(`/fines/${fineId}/pay`, { method: 'PATCH', body: JSON.stringify({ amount }) });
-    await Promise.all([fetchMemberFines(), fetchMemberLoans()]);
+    if (Number(amount) > 0) {
+      await api('/fines/pay', { method: 'POST', body: JSON.stringify({ amount: Number(amount) }) });
+    } else if (fineId) {
+      await api(`/fines/${fineId}/pay`, { method: 'PATCH', body: JSON.stringify({}) });
+    }
+    await Promise.all([fetchMemberFines(), fetchMemberLoans(), fetchAdminFines()]);
     showMessage('Fine payment applied');
   } catch (err) { showMessage(err.message); }
 }
@@ -1130,14 +1139,24 @@ function wireEvents() {
   });
   qs('#fine-pay-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const pending = state.fines.find((f) => f.paymentStatus !== 'Paid');
-    if (pending) payFine(pending.fineId);
-    else showMessage('No pending fines.');
+    const amt = Number(qs('#fine-pay-amount').value || 0);
+    if (amt > 0) {
+      payFine(null, amt);
+      e.target.reset();
+    } else {
+      const pending = state.fines.find((f) => f.paymentStatus !== 'Paid');
+      if (pending) payFine(pending.fineId);
+      else showMessage('No pending fines.');
+    }
   });
   qs('#pay-first-fine').addEventListener('click', () => {
-    const pending = state.fines.find((f) => f.paymentStatus !== 'Paid');
-    if (pending) payFine(pending.fineId);
-    else showMessage('No pending fines.');
+    const amt = Number(qs('#fine-pay-amount').value || 0);
+    if (amt > 0) payFine(null, amt);
+    else {
+      const pending = state.fines.find((f) => f.paymentStatus !== 'Paid');
+      if (pending) payFine(pending.fineId);
+      else showMessage('No pending fines.');
+    }
   });
   qs('#confirm-cancel')?.addEventListener('click', closeConfirm);
   qs('#confirm-ok')?.addEventListener('click', () => {

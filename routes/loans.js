@@ -87,9 +87,11 @@ router.post('/return', authMiddleware, async (req, res) => {
   if (daysLate > 0) {
     const existingFine = await get('SELECT * FROM fines WHERE loanId = ?', [loanId]);
     if (!existingFine) {
+      const fineAmount = daysLate * 1;
       const fineResult = await run(
-        `INSERT INTO fines (loanId, memberId, fineAmount, fineDate, paymentStatus) VALUES (?, ?, ?, ?, 'Pending')`,
-        [loanId, loan.memberId, daysLate * 1, returnDate.toISOString()]
+        `INSERT INTO fines (loanId, memberId, fineAmount, originalAmount, remainingAmount, fineDate, paymentStatus)
+         VALUES (?, ?, ?, ?, ?, ?, 'Pending')`,
+        [loanId, loan.memberId, fineAmount, fineAmount, fineAmount, returnDate.toISOString()]
       );
       fine = await get('SELECT * FROM fines WHERE fineId = ?', [fineResult.id]);
     } else {
