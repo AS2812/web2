@@ -37,6 +37,7 @@
           <label><input type="checkbox" name="remember" /> Remember me</label>
           <a class="muted" href="#">Forgot password?</a>
         </div>
+        <div id="signin-error" class="muted small hidden" style="color:#c84f4f;"></div>
         <button class="primary-btn" type="submit">Sign in</button>
       </form>
     </div>
@@ -190,23 +191,53 @@
           </div>
         </div>
         <div class="tab-panel hidden" data-panel="add-book">
-        <form id="admin-book-form" class="form-grid">
-          <input name="title" placeholder="Book Title" required />
-          <input name="author" placeholder="Author Name(s)" />
-          <input name="isbn" placeholder="ISBN" required />
-          <input name="category" placeholder="Category / Genre" />
-          <input name="publicationDate" type="date" placeholder="Publication Date" />
-          <input id="total-copies" name="totalCopies" type="number" min="0" step="1" placeholder="Total Copies" required />
-          <div style="display:flex; gap:8px; align-items:center;">
-            <input id="available-copies" name="copiesAvailable" type="number" min="0" step="1" placeholder="Available Copies" required />
-            <button id="sync-available" class="secondary-btn" type="button">Set Available = Total</button>
-          </div>
-          <small id="copies-hint" class="muted">Total = owned copies. Available = borrowable now. Must be integers, available ≤ total.</small>
-          <div id="copies-error" class="muted" style="color:#c84f4f;"></div>
-          <input name="cover" placeholder="Cover URL" />
-          <textarea name="description" placeholder="Description"></textarea>
-          <button id="add-book-submit" class="primary-btn" type="submit" disabled>Add Book</button>
-        </form>
+          <form id="admin-book-form" class="form-grid form-book">
+            <label class="form-field">
+              <span>Book Title</span>
+              <input name="title" placeholder="Book Title" required />
+            </label>
+            <label class="form-field">
+              <span>Author Name(s)</span>
+              <input name="author" placeholder="Author Name(s)" />
+            </label>
+            <label class="form-field">
+              <span>ISBN</span>
+              <input name="isbn" placeholder="ISBN" required />
+            </label>
+            <label class="form-field">
+              <span>Category / Genre</span>
+              <input name="category" placeholder="Category / Genre" />
+            </label>
+            <label class="form-field">
+              <span>Publication Date</span>
+              <input name="publicationDate" type="date" placeholder="Publication Date" />
+            </label>
+            <label class="form-field">
+              <span>Cover URL</span>
+              <input name="cover" placeholder="Cover URL (optional)" />
+            </label>
+            <label class="form-field">
+              <span>Total Copies</span>
+              <input id="total-copies" name="totalCopies" type="number" min="0" step="1" placeholder="Total Copies" required />
+              <small class="muted">Owned copies</small>
+            </label>
+            <label class="form-field">
+              <span>Available Copies</span>
+              <div class="row two">
+                <input id="available-copies" name="copiesAvailable" type="number" min="0" step="1" placeholder="Available Copies" required />
+                <button id="sync-available" class="secondary-btn" type="button">Set Available = Total</button>
+              </div>
+              <small class="muted">Must be ≤ total copies</small>
+              <div id="copies-error" class="muted" style="color:#c84f4f;"></div>
+            </label>
+            <label class="form-field wide">
+              <span>Description</span>
+              <textarea name="description" placeholder="Description"></textarea>
+            </label>
+            <div class="form-actions">
+              <button id="add-book-submit" class="primary-btn" type="submit" disabled>Add Book</button>
+            </div>
+          </form>
         </div>
         <div class="tab-panel hidden" data-panel="register-member">
           <form id="admin-member-form" class="form-grid">

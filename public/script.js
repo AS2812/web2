@@ -77,8 +77,10 @@ async function api(path, options = {}) {
   } catch (err) {
     // non-JSON response
   }
-  if (res.status === 401) {
-    handleLogout('Session expired. Please sign in again.');
+  if (res.status === 401 || res.status === 403) {
+    handleLogout();
+    sessionStorage.setItem('auth_msg', 'Session expired. Please sign in again.');
+    window.location.href = '/';
     throw new Error('Unauthorized');
   }
   if (!res.ok || (data && data.success === false)) {
@@ -110,7 +112,13 @@ async function handleLogin(e) {
     setToken(resp.token);
     await bootstrapAfterAuth();
   } catch (err) {
-    showMessage(err.message);
+    const inline = qs('#signin-error');
+    if (inline) {
+      inline.textContent = err.message || 'Incorrect username or password.';
+      inline.classList.remove('hidden');
+    } else {
+      showMessage(err.message || 'Incorrect username or password.');
+    }
   }
 }
 
@@ -150,7 +158,7 @@ function handleLogout(message) {
   state.admin = { stats: null, members: [], reservations: [], loans: [], fines: [] };
   syncAuthUI();
   setRoleUI();
-  if (message) alert(message);
+  if (message) sessionStorage.setItem('auth_msg', message);
 }
 
 // Fetchers

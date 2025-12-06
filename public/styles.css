@@ -12,6 +12,8 @@
   --shadow: 0 1px 6px rgba(0,0,0,0.08);
   --nav: #34477d;
   --nav-accent: #9ec2f3;
+  --radius: 12px;
+  --gap: 12px;
   font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
 }
 
@@ -161,7 +163,12 @@ body { margin: 0; background: var(--bg); color: var(--text); }
   font-size: 14px;
   background: #fff;
 }
-.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--gap); margin-bottom: 12px; }
+.form-grid.form-book { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.form-field { display: flex; flex-direction: column; gap: 6px; }
+.form-field span { font-weight: 600; color: var(--text); }
+.form-field.wide { grid-column: 1 / -1; }
+.form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .row { display: flex; gap: 8px; }
