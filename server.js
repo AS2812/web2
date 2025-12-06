@@ -13,7 +13,7 @@ app.use(helmet({
     useDefaults: true,
     directives: {
       "default-src": ["'self'"],
-      "img-src": ["'self'", "data:", "blob:", "https://covers.openlibrary.org", "https://picsum.photos", "https://placehold.co"],
+      "img-src": ["'self'", "data:", "blob:", "https://covers.openlibrary.org"],
       "connect-src": ["'self'", "https://openlibrary.org"],
       "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       "font-src": ["'self'", "data:", "https://fonts.gstatic.com"]

@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://covers.openlibrary.org https://picsum.photos https://placehold.co data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://openlibrary.org;"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://covers.openlibrary.org; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://openlibrary.org;"/>
   <title>Library Management System</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><text y=%2250%25%22 x=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2248%22>📚</text></svg>">
   <link rel="stylesheet" href="styles.css" />
   <script src="chart.min.js"></script>
 </head>
@@ -372,7 +373,7 @@
       <h3>Apply Payment</h3>
       <p id="pay-meta" class="muted small"></p>
       <input id="pay-amount-input" class="input" type="number" min="0" step="0.01" placeholder="Amount" />
-      <p id="pay-error" class="muted small" style="color:#c84f4f;"></p>
+      <p id="pay-error" class="muted small hidden" style="color:#c84f4f;"></p>
       <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
         <button class="secondary-btn" id="pay-cancel-btn" type="button">Cancel</button>
         <button class="primary-btn" id="pay-apply-btn" type="button">Apply Payment</button>

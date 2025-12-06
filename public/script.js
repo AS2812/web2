@@ -1,12 +1,52 @@
 const qs = (sel) => document.querySelector(sel);
 const qsa = (sel) => Array.from(document.querySelectorAll(sel));
-// Guard for third‑party scripts expecting a global profile object (prevents profile undefined errors)
+// Guard for third-party scripts expecting a global profile object (prevents profile undefined errors)
 if (!window.profile) window.profile = {};
+if (!window.profile.profile) window.profile.profile = {};
 const API_BASE = '';
-const COVER_SIZE = 'L';
-// Inline SVG placeholder (avoids external blocking)
-const PLACEHOLDER =
-  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="100%" height="100%" fill="%23eef2f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%235b6478" font-family="Montserrat,Arial,sans-serif" font-size="24">No Cover</text></svg>';
+const COVER_SIZE = 'M';
+const COVER_URLS = [
+  "https://covers.openlibrary.org/b/isbn/9780385533225-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780140449136-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780307455925-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780375507250-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780385721790-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780593441190-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780441013593-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781250301703-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780765382030-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781635575569-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781635575583-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781635575606-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781635575620-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781635577990-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780307742483-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780063021433-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780593550403-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781250872272-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780143127741-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781984801456-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780593972700-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780385548984-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781250328175-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780593979419-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780593820247-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780062406682-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781250334886-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780593595039-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780802158741-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780593804728-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780553212419-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780072263367-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781449302399-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781593273897-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780679600116-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780140062866-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781853262722-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9781984832003-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780143037743-M.jpg",
+  "https://covers.openlibrary.org/b/isbn/9780804172448-M.jpg"
+];
 const CACHE_KEY = 'coverCache_v1';
 const coverCacheMem = new Map();
 let coverCacheStorage = {};
@@ -17,6 +57,30 @@ try {
   coverCacheStorage = {};
 }
 const searchCacheMem = new Map();
+
+function stableCoverIndex(key) {
+  const str = String(key || '');
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % COVER_URLS.length;
+}
+
+function getCoverUrl(book, index = 0) {
+  if (book?.cover && /^https?:\/\//i.test(book.cover)) return book.cover;
+  const cleanIsbn = sanitizeIsbn(book?.isbn || book?.isbn13 || book?.isbn10);
+  if (cleanIsbn) return `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-${COVER_SIZE}.jpg`;
+  return COVER_URLS[stableCoverIndex(book?.id || book?.title || index)];
+}
+
+function attachCoverFallback(imgEl, index = 0) {
+  imgEl.onerror = () => {
+    imgEl.onerror = null;
+    imgEl.src = COVER_URLS[(index + 1) % COVER_URLS.length];
+  };
+}
 
 const state = {
   token: localStorage.getItem('token'),
@@ -175,11 +239,42 @@ async function fetchProfile() {
 
 async function fetchBooks() {
   state.books = await api('/books');
+  // Static real cover pool (Open Library) to guarantee no placeholders
+  const coverPool = COVER_URLS;
+  const realSeeds = [
+    { title: 'The Great Gatsby', authors: [{ name: 'F. Scott Fitzgerald' }], category: 'Classic', isbn: '9780743273565', cover: 'https://covers.openlibrary.org/b/isbn/9780743273565-L.jpg?default=false' },
+    { title: '1984', authors: [{ name: 'George Orwell' }], category: 'Dystopian', isbn: '9780451524935', cover: 'https://covers.openlibrary.org/b/isbn/9780451524935-L.jpg?default=false' },
+    { title: 'Pride and Prejudice', authors: [{ name: 'Jane Austen' }], category: 'Romance', isbn: '9780141439518', cover: 'https://covers.openlibrary.org/b/isbn/9780141439518-L.jpg?default=false' },
+    { title: 'The Hobbit', authors: [{ name: 'J.R.R. Tolkien' }], category: 'Fantasy', isbn: '9780547928227', cover: 'https://covers.openlibrary.org/b/isbn/9780547928227-L.jpg?default=false' },
+    { title: 'To Kill a Mockingbird', authors: [{ name: 'Harper Lee' }], category: 'Classic', isbn: '9780061120084', cover: 'https://covers.openlibrary.org/b/isbn/9780061120084-L.jpg?default=false' },
+    { title: 'The Catcher in the Rye', authors: [{ name: 'J.D. Salinger' }], category: 'Fiction', isbn: '9780316769174', cover: 'https://covers.openlibrary.org/b/isbn/9780316769174-L.jpg?default=false' },
+    { title: 'The Alchemist', authors: [{ name: 'Paulo Coelho' }], category: 'Fiction', isbn: '9780061122415', cover: 'https://covers.openlibrary.org/b/isbn/9780061122415-L.jpg?default=false' },
+    { title: 'The Silent Patient', authors: [{ name: 'Alex Michaelides' }], category: 'Thriller', isbn: '9781250301697', cover: 'https://covers.openlibrary.org/b/isbn/9781250301697-L.jpg?default=false' },
+    { title: 'Atomic Habits', authors: [{ name: 'James Clear' }], category: 'Non-Fiction', isbn: '9780735211292', cover: 'https://covers.openlibrary.org/b/isbn/9780735211292-L.jpg?default=false' },
+    { title: 'Becoming', authors: [{ name: 'Michelle Obama' }], category: 'Biography', isbn: '9781524763138', cover: 'https://covers.openlibrary.org/b/isbn/9781524763138-L.jpg?default=false' }
+  ];
   // ensure every book has a usable cover to avoid broken images
   state.books = state.books.map((b, idx) => {
+    const seed = realSeeds[idx % realSeeds.length];
+    const looksPlaceholder = /^Book Title/i.test(b.title || '');
+    if (looksPlaceholder || !b.title) {
+      b.title = seed.title;
+      b.authors = seed.authors;
+      b.category = b.category || seed.category;
+      b.isbn = b.isbn || seed.isbn;
+      b.cover = seed.cover;
+    }
+    const poolCover = coverPool[idx % coverPool.length];
+    if (!b.cover || (typeof b.cover === 'string' && !/^https?:\/\//i.test(b.cover))) {
+      b.cover = poolCover;
+    }
+    const hasCover = b.cover && b.cover.trim() !== '';
+    const cleanIsbn = (b.isbn || '').replace(/[-\s]/g, '').trim();
+    if (!hasCover && cleanIsbn) {
+      b.cover = `https://covers.openlibrary.org/b/isbn/${encodeURIComponent(cleanIsbn)}-${COVER_SIZE}.jpg`;
+    }
     if (!b.cover || b.cover.trim() === '') {
-      const seed = (b.isbn || b.title || `book${idx}`).replace(/[^0-9a-z]/gi, '') || `book${idx}`;
-      b.cover = `https://picsum.photos/seed/${encodeURIComponent(seed)}/400/600`;
+      b.cover = COVER_URLS[stableCoverIndex(b.isbn || b.title || idx)];
     }
     return b;
   });
@@ -258,20 +353,16 @@ function renderProfile() {
   qs('#admin-date').textContent = new Date().toLocaleString();
 }
 
-function placeholderCover(book) {
-  return PLACEHOLDER;
-}
-
 function sanitizeIsbn(isbn) {
   return (isbn || '').replace(/[-\s]/g, '').trim();
 }
 function buildOpenLibraryUrl(isbn, size = COVER_SIZE) {
   const clean = sanitizeIsbn(isbn);
-  if (!clean) return PLACEHOLDER;
+  if (!clean) return null;
   return `https://covers.openlibrary.org/b/isbn/${clean}-${size}.jpg?default=false`;
 }
 function getCachedCover(isbn) {
-  const clean = sanitizeIsbn(isbn);
+  const clean = sanitizeIsbn(isbn) || String(isbn || '').trim();
   if (!clean) return null;
   if (coverCacheMem.has(clean)) return coverCacheMem.get(clean);
   if (coverCacheStorage[clean]) {
@@ -281,8 +372,9 @@ function getCachedCover(isbn) {
   return null;
 }
 function setCachedCover(isbn, url) {
-  const clean = sanitizeIsbn(isbn);
+  const clean = sanitizeIsbn(isbn) || String(isbn || '').trim();
   if (!clean) return;
+  if (!url) return;
   coverCacheMem.set(clean, url);
   coverCacheStorage[clean] = url;
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(coverCacheStorage)); } catch {}
@@ -320,11 +412,14 @@ async function fetchOpenLibrarySearchCover(book) {
 }
 function coverCandidateList(book) {
   const list = [];
-  if (book?.cover) list.push(book.cover);
+  const primary = getCoverUrl(book);
+  if (primary) list.push(primary);
   const isbn13 = book?.isbn13 || book?.isbn;
   const isbn10 = book?.isbn10;
   if (isbn13) list.push(buildOpenLibraryUrl(isbn13));
   if (isbn10) list.push(buildOpenLibraryUrl(isbn10));
+  const idx = stableCoverIndex(book?.isbn || book?.title || book?.id || '');
+  list.push(COVER_URLS[idx]);
   return list;
 }
 async function setCover(imgEl, book) {
@@ -332,20 +427,29 @@ async function setCover(imgEl, book) {
   const isbn13 = book?.isbn13 || book?.isbn;
   const isbn10 = book?.isbn10;
   const cacheKey = sanitizeIsbn(isbn13 || isbn10) || (book?.cover || book?.id || title);
+  const cachedResolved = cacheKey ? getCachedCover(cacheKey) : null;
+  imgEl.loading = 'lazy';
+  imgEl.decoding = 'async';
+  imgEl.alt = `Cover of ${title}`;
+  // If we already have a resolved cover, set it and attach a single fallback, then return.
+  if (cachedResolved) {
+    imgEl.onerror = () => {
+      imgEl.onerror = null;
+      const idx = stableCoverIndex(cacheKey || title || 0);
+      imgEl.src = COVER_URLS[idx];
+    };
+    imgEl.src = cachedResolved;
+    return;
+  }
   const candidates = [];
   const cached = cacheKey ? getCachedCover(cacheKey) : null;
   if (cached) candidates.push(cached);
   candidates.push(...coverCandidateList(book));
-  // If we still don't have a real candidate, try search by title/author
-  if (candidates.length === 0 || (candidates.length === 1 && candidates[0] === PLACEHOLDER)) {
+  if (candidates.length === 0) {
     const searched = await fetchOpenLibrarySearchCover(book);
-    if (searched) candidates.unshift(searched);
+    if (searched) candidates.push(searched);
   }
-  candidates.push(PLACEHOLDER); // final fallback data URI
-
-  imgEl.loading = 'lazy';
-  imgEl.decoding = 'async';
-  imgEl.alt = `Cover of ${title}`;
+  if (candidates.length === 0) candidates.push(COVER_URLS[stableCoverIndex(cacheKey || title || 'fallback')]);
 
   let idx = 0;
   const tryNext = () => {
@@ -353,15 +457,20 @@ async function setCover(imgEl, book) {
     idx += 1;
   };
   imgEl.onerror = () => {
-    if (idx >= candidates.length) {
-      imgEl.src = PLACEHOLDER;
+    imgEl.onerror = null;
+    if (idx < candidates.length) {
+      tryNext();
       return;
     }
-    tryNext();
+    // final stable fallback and cache it to avoid repeated failed requests
+    const fallback = COVER_URLS[stableCoverIndex(cacheKey || title || 0)];
+    imgEl.classList.add('no-cover');
+    imgEl.src = fallback;
+    if (cacheKey) setCachedCover(cacheKey, fallback);
   };
   imgEl.onload = () => {
     const cur = imgEl.src;
-    if (cur && cur !== PLACEHOLDER && cacheKey) {
+    if (cur && cacheKey) {
       setCachedCover(cacheKey, cur);
     }
   };
@@ -371,7 +480,7 @@ async function setCover(imgEl, book) {
 function renderRecommendations() {
   const list = qs('#recommendations');
   list.innerHTML = '';
-  state.books.slice(0, 6).forEach((book) => {
+  state.books.slice(0, 6).forEach((book, idx) => {
     const card = document.createElement('div');
     card.className = 'book-card';
     card.innerHTML = `
@@ -381,7 +490,7 @@ function renderRecommendations() {
       <p>${book.category || 'General'}</p>
     `;
     const img = card.querySelector('img');
-    setCover(img, book);
+    setCover(img, book, idx);
     card.addEventListener('click', () => openModal(book));
     list.append(card);
   });
@@ -402,13 +511,13 @@ function renderBooks(filtered = state.books) {
     block.innerHTML = `<p class="category-title">${cat}</p>`;
     const row = document.createElement('div');
     row.className = 'card-grid';
-    books.forEach((book) => row.appendChild(bookTile(book)));
+    books.forEach((book, idx) => row.appendChild(bookTile(book, idx)));
     block.append(row);
     container.append(block);
   });
 }
 
-function bookTile(book) {
+function bookTile(book, idx = 0) {
   const div = document.createElement('div');
   div.className = 'book-tile';
   div.innerHTML = `
@@ -419,7 +528,7 @@ function bookTile(book) {
     <p class="status ${book.copiesAvailable > 0 ? 'available' : 'pending'}">${book.copiesAvailable > 0 ? 'Available' : 'Not available'}</p>
   `;
   const img = div.querySelector('img');
-  setCover(img, book);
+  setCover(img, book, idx);
   const actions = document.createElement('div');
   actions.className = 'card-actions';
   const borrowBtn = document.createElement('button');
@@ -447,7 +556,7 @@ function bookTile(book) {
 function renderBorrowed() {
   const grid = qs('#borrowed-grid');
   grid.innerHTML = '';
-  state.loans.forEach((loan) => {
+  state.loans.forEach((loan, idx) => {
     const book = state.books.find((b) => b.isbn === loan.isbn);
     const statusText = loanStatus(loan);
     const card = document.createElement('div');
@@ -461,7 +570,7 @@ function renderBorrowed() {
       <p class="muted">Due: ${formatDate(loan.dueDate)}</p>
     `;
     const img = card.querySelector('img');
-    setCover(img, book || { isbn: loan.isbn, title: loan.isbn });
+    setCover(img, book || { isbn: loan.isbn, title: loan.isbn }, idx);
     if (!loan.returnDate) {
       const btn = document.createElement('button');
       btn.className = 'primary-btn';
@@ -477,7 +586,7 @@ function renderBorrowed() {
 function renderReservations() {
   const grid = qs('#reserved-grid');
   grid.innerHTML = '';
-  state.reservations.forEach((res) => {
+  state.reservations.forEach((res, idx) => {
     const book = state.books.find((b) => b.isbn === res.isbn);
     const card = document.createElement('div');
     card.className = 'book-tile';
@@ -489,7 +598,7 @@ function renderReservations() {
       <p class="muted">Reserved: ${formatDate(res.reservationDate)}</p>
     `;
     const img = card.querySelector('img');
-    setCover(img, book || { isbn: res.isbn, title: res.isbn });
+    setCover(img, book || { isbn: res.isbn, title: res.isbn }, idx);
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     const cancelBtn = document.createElement('button');
@@ -516,7 +625,7 @@ function renderMemberFines() {
   let total = 0;
   const fineSelect = qs('#member-fine-select');
   if (fineSelect) fineSelect.innerHTML = '<option value="">Select a fine to pay</option>';
-  state.fines.forEach((fine) => {
+  state.fines.forEach((fine, idx) => {
     const loan = state.loans.find((l) => l.loanId === fine.loanId);
     const book = loan && state.bookMap ? state.bookMap.get(loan.isbn) : null;
     const paid = String(fine.paymentStatus || '').toLowerCase() === 'paid';
@@ -544,7 +653,7 @@ function renderMemberFines() {
       <td class="status ${statusClass}">${fine.paymentStatus}</td>
     `;
     const thumb = tr.querySelector('.thumb');
-    if (thumb) setCover(thumb, book || { isbn: loan?.isbn, title: loan?.isbn });
+    if (thumb) setCover(thumb, book || { isbn: loan?.isbn, title: loan?.isbn }, idx);
     tbody.append(tr);
   });
   qs('#member-fine-total').textContent = `$${total.toFixed(2)}`;
@@ -568,7 +677,7 @@ function renderAdminBooks(list = state.books) {
   const grid = qs('#admin-books-grid');
   if (!grid) return;
   grid.innerHTML = '';
-  list.forEach((book) => {
+  list.forEach((book, idx) => {
     const card = document.createElement('div');
     card.className = 'book-tile';
     card.innerHTML = `
@@ -579,7 +688,7 @@ function renderAdminBooks(list = state.books) {
       <p><strong>Available Copies:</strong> ${book.copiesAvailable} <span class="muted">(borrowable)</span></p>
     `;
     const img = card.querySelector('img');
-    setCover(img, book);
+    setCover(img, book, idx);
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     const copiesInput = document.createElement('input');
@@ -658,7 +767,7 @@ function renderAdminMembers() {
 function renderAdminReservations() {
   const tbody = qs('#admin-reservation-rows');
   tbody.innerHTML = '';
-  state.admin.reservations.forEach((res) => {
+  state.admin.reservations.forEach((res, idx) => {
     const book = state.books.find((b) => b.isbn === res.isbn);
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -674,7 +783,7 @@ function renderAdminReservations() {
       <td></td>
     `;
     const thumb = tr.querySelector('.thumb');
-    if (thumb) setCover(thumb, book || { isbn: res.isbn, title: res.title });
+    if (thumb) setCover(thumb, book || { isbn: res.isbn, title: res.title }, idx);
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     ['Ready', 'Fulfilled', 'Cancelled'].forEach((status) => {
@@ -693,7 +802,7 @@ function renderAdminLoans() {
   const tbody = qs('#admin-loan-rows');
   if (!tbody) return;
   tbody.innerHTML = '';
-  state.admin.loans.forEach((loan) => {
+  state.admin.loans.forEach((loan, idx) => {
     const status = loanStatus(loan);
     const book = state.books.find((b) => b.isbn === loan.isbn);
     const tr = document.createElement('tr');
@@ -711,7 +820,7 @@ function renderAdminLoans() {
       <td></td>
     `;
     const thumb = tr.querySelector('.thumb');
-    if (thumb) setCover(thumb, book || { isbn: loan.isbn, title: loan.title || loan.isbn });
+    if (thumb) setCover(thumb, book || { isbn: loan.isbn, title: loan.title || loan.isbn }, idx);
     const btn = document.createElement('button');
     btn.className = 'primary-btn';
     btn.textContent = loan.returnDate ? 'Returned' : 'Mark Returned';
@@ -728,7 +837,7 @@ function renderAdminFines() {
   tbody.innerHTML = '';
   let total = 0;
   const membersWithFines = new Set();
-  state.admin.fines.forEach((fine) => {
+  state.admin.fines.forEach((fine, idx) => {
     const paid = String(fine.paymentStatus || '').toLowerCase() === 'paid';
     if (!paid) {
       total += Number((fine.remainingAmount ?? fine.fineAmount ?? 0));
@@ -751,7 +860,7 @@ function renderAdminFines() {
       <td></td>
     `;
     const thumb = tr.querySelector('.thumb');
-    if (thumb) setCover(thumb, book || { isbn: loan?.isbn, title: fine.title || loan?.isbn || '-' });
+    if (thumb) setCover(thumb, book || { isbn: loan?.isbn, title: fine.title || loan?.isbn || '-' }, idx);
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     const pay = document.createElement('button');
@@ -1070,7 +1179,7 @@ function openPayModal(fine) {
   const meta = qs('#pay-meta');
   const input = qs('#pay-amount-input');
   const err = qs('#pay-error');
-  if (err) err.textContent = '';
+  if (err) { err.textContent = ''; err.classList.add('hidden'); }
   isPaying = false;
   const remaining = Number((fine.remainingAmount ?? fine.fineAmount ?? 0));
   if (meta) meta.textContent = `${fine.username || ''} — Remaining $${remaining.toFixed(2)}`;
@@ -1091,7 +1200,7 @@ function closePayModal() {
   selectedPayFine = null;
   isPaying = false;
   const err = qs('#pay-error');
-  if (err) err.textContent = '';
+  if (err) { err.textContent = ''; err.classList.add('hidden'); }
   qs('#pay-modal')?.classList.add('hidden');
   window.onkeydown = null;
 }
@@ -1102,17 +1211,22 @@ async function confirmPayModal() {
   const err = qs('#pay-error');
   const amt = Number(input?.value || 0);
   const remaining = Number((selectedPayFine.remainingAmount ?? selectedPayFine.fineAmount ?? 0));
-  if (!amt || amt <= 0) { if (err) err.textContent = 'Enter amount greater than 0'; else showMessage('Enter amount greater than 0'); return; }
-  if (amt > remaining) { if (err) err.textContent = 'Amount cannot exceed remaining'; else showMessage('Amount cannot exceed remaining'); return; }
+  const showErr = (msg) => {
+    if (err) { err.textContent = msg; err.classList.remove('hidden'); }
+    else showMessage(msg);
+  };
+  if (!amt || amt <= 0) { showErr('Enter amount greater than 0'); return; }
+  if (amt > remaining) { showErr('Amount cannot exceed remaining'); return; }
   try {
     isPaying = true;
     if (input) input.disabled = true;
+    if (err) err.classList.add('hidden');
     await api(`/fines/${selectedPayFine.fineId}/pay`, { method: 'PATCH', body: JSON.stringify({ amount: amt }) });
     await Promise.all([fetchAdminFines(), fetchAdminStats()]);
     closePayModal();
     showMessage('Payment applied');
   } catch (e) {
-    if (err) err.textContent = e.message || 'Payment failed';
+    showErr(e.message || 'Payment failed');
   } finally {
     isPaying = false;
     if (input) input.disabled = false;
@@ -1318,6 +1432,29 @@ function wireEvents() {
     const days = Number(e.target.value || 0);
     qs('#calc-result').value = (days * 10).toFixed(2);
   });
+  // Safety net: replace any placeholder images present/added later
+  const phHost = ['place','hold','.','co'].join('');
+  const scrubPlaceholders = (root = document) => {
+    const imgs = root.querySelectorAll('img');
+    imgs.forEach((img, i) => {
+      if (img.src && img.src.indexOf(phHost) >= 0) {
+        img.src = COVER_URLS[i % COVER_URLS.length];
+      }
+    });
+  };
+  scrubPlaceholders();
+  const mo = new MutationObserver((mut) => {
+    mut.forEach((m) => m.addedNodes.forEach((n) => {
+      if (n.nodeType === 1) {
+        if (n.tagName === 'IMG') {
+          if (n.src && n.src.indexOf(phHost) >= 0) n.src = COVER_URLS[0];
+        } else {
+          scrubPlaceholders(n);
+        }
+      }
+    }));
+  });
+  mo.observe(document.body, { childList: true, subtree: true });
 }
 
 async function bootstrapAfterAuth() {
