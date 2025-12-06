@@ -484,17 +484,17 @@ function renderMemberFines() {
   state.fines.forEach((fine) => {
     const loan = state.loans.find((l) => l.loanId === fine.loanId);
     const book = loan && state.bookMap ? state.bookMap.get(loan.isbn) : null;
-  const paid = String(fine.paymentStatus || '').toLowerCase() === 'paid';
-  const statusClass = paid ? 'ready' : 'overdue';
-  if (!paid) {
-    total += Number(fine.remainingAmount ?? fine.fineAmount ?? 0);
-    if (fineSelect) {
-      const opt = document.createElement('option');
-      opt.value = fine.fineId;
-      opt.textContent = `${book?.title || loan?.isbn || 'Fine'} - $${Number(fine.remainingAmount ?? fine.fineAmount ?? 0).toFixed(2)}`;
-      fineSelect.append(opt);
+    const paid = String(fine.paymentStatus || '').toLowerCase() === 'paid';
+    const statusClass = paid ? 'ready' : 'overdue';
+    if (!paid) {
+      total += Number(fine.remainingAmount ?? fine.fineAmount ?? 0);
+      if (fineSelect) {
+        const opt = document.createElement('option');
+        opt.value = fine.fineId;
+        opt.textContent = `${book?.title || loan?.isbn || 'Fine'} - $${Number(fine.remainingAmount ?? fine.fineAmount ?? 0).toFixed(2)}`;
+        fineSelect.append(opt);
+      }
     }
-  }
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>
@@ -505,32 +505,11 @@ function renderMemberFines() {
       </td>
       <td>${formatDate(fine.dueDate)}</td>
       <td>${formatDate(fine.returnDate)}</td>
-      <td></td>
+      <td style="text-align:right;">$${Number((fine.remainingAmount ?? fine.fineAmount ?? 0)).toFixed(2)}</td>
       <td class="status ${statusClass}">${fine.paymentStatus}</td>
-      <td></td>
     `;
     const thumb = tr.querySelector('.thumb');
     if (thumb) setCover(thumb, book || { isbn: loan?.isbn, title: loan?.isbn });
-    const amountCell = tr.children[3];
-    amountCell.textContent = `$${Number((fine.remainingAmount ?? fine.fineAmount ?? 0)).toFixed(2)}`;
-    if (!paid) {
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.min = '0';
-      input.step = '0.01';
-      input.placeholder = 'Amount';
-      input.style.width = '90px';
-      const payBtn = document.createElement('button');
-      payBtn.className = 'secondary-btn';
-      payBtn.textContent = 'Pay';
-      payBtn.addEventListener('click', () => {
-        const amt = input.value ? Number(input.value) : undefined;
-        payFine(fine.fineId, amt);
-      });
-      amountCell.innerHTML = '';
-      amountCell.append(`$${Number((fine.remainingAmount ?? fine.fineAmount ?? 0)).toFixed(2)}`, document.createElement('br'), input);
-      tr.lastElementChild.append(payBtn);
-    }
     tbody.append(tr);
   });
   qs('#member-fine-total').textContent = `$${total.toFixed(2)}`;
