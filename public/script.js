@@ -176,6 +176,7 @@ async function fetchBooks() {
   renderBooks();
   renderRecommendations();
   renderAdminBooks();
+  populateIssueBooks();
 }
 
 async function fetchMemberLoans() {
@@ -218,6 +219,15 @@ async function fetchAdminLoans() {
   state.admin.loans = await api('/loans');
   renderAdminLoans();
   fillLoanSelect();
+}
+
+function populateIssueBooks() {
+  const sel = qs('#issue-book-select');
+  if (!sel) return;
+  const available = state.books.filter((b) => Number(b.copiesAvailable || 0) > 0);
+  sel.innerHTML = available.length
+    ? ['<option value="">Select book</option>', ...available.map((b) => `<option value="${b.isbn}">${b.title} (${b.copiesAvailable} available)</option>`)].join('')
+    : '<option value="">No available books</option>';
 }
 
 async function fetchAdminFines() {
@@ -957,7 +967,7 @@ async function issueBook(e) {
   if (!memberId || !isbn) { showMessage('Select member and book'); return; }
   try {
     await api('/loans/borrow', { method: 'POST', body: JSON.stringify({ memberId: Number(memberId), isbn }) });
-    await Promise.all([fetchAdminLoans(), fetchBooks(), fetchAdminReservations()]);
+    await Promise.all([fetchAdminLoans(), fetchBooks(), fetchAdminReservations(), fetchAdminStats()]);
     showMessage('Book issued');
   } catch (err) { showMessage(err.message); }
 }
@@ -1018,6 +1028,7 @@ function fillMemberSelects() {
 
 function fillLoanSelect() {
   fillMemberSelects();
+  populateIssueBooks();
 }
 
 function setRoleUI() {
