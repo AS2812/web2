@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://covers.openlibrary.org https://picsum.photos data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://openlibrary.org;"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://covers.openlibrary.org https://picsum.photos https://placehold.co data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://openlibrary.org;"/>
   <title>Library Management System</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -368,13 +368,14 @@
 
   <div id="pay-modal" class="modal hidden">
     <div class="modal-content" style="max-width:420px;">
-      <button class="modal-close" type="button" onclick="closePayModal()">×</button>
+      <button class="modal-close" id="pay-close-btn" type="button">×</button>
       <h3>Apply Payment</h3>
       <p id="pay-meta" class="muted small"></p>
       <input id="pay-amount-input" class="input" type="number" min="0" step="0.01" placeholder="Amount" />
+      <p id="pay-error" class="muted small" style="color:#c84f4f;"></p>
       <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
-        <button class="secondary-btn" type="button" onclick="closePayModal()">Cancel</button>
-        <button class="primary-btn" type="button" onclick="confirmPayModal()">Apply Payment</button>
+        <button class="secondary-btn" id="pay-cancel-btn" type="button">Cancel</button>
+        <button class="primary-btn" id="pay-apply-btn" type="button">Apply Payment</button>
       </div>
     </div>
   </div>

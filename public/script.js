@@ -1,5 +1,7 @@
 const qs = (sel) => document.querySelector(sel);
 const qsa = (sel) => Array.from(document.querySelectorAll(sel));
+// Guard for third‑party scripts expecting a global profile object (prevents profile undefined errors)
+if (!window.profile) window.profile = {};
 const API_BASE = '';
 const COVER_SIZE = 'L';
 // Inline SVG placeholder (avoids external blocking)
@@ -18,7 +20,7 @@ const searchCacheMem = new Map();
 
 const state = {
   token: localStorage.getItem('token'),
-  user: null,
+  user: { profile: {} },
   memberId: null,
   role: null,
   books: [],
@@ -148,7 +150,7 @@ async function handleRegister(e) {
 
 function handleLogout(message) {
   setToken(null);
-  state.user = null;
+  state.user = { profile: {} };
   state.memberId = null;
   state.role = null;
   state.books = [];
@@ -165,6 +167,7 @@ function handleLogout(message) {
 async function fetchProfile() {
   const profile = await api('/auth/me');
   state.user = profile.user || {};
+  if (!state.user.profile) state.user.profile = {};
   state.memberId = profile.memberId || null;
   state.role = profile.user?.role || null;
   renderProfile();
@@ -172,6 +175,14 @@ async function fetchProfile() {
 
 async function fetchBooks() {
   state.books = await api('/books');
+  // ensure every book has a usable cover to avoid broken images
+  state.books = state.books.map((b, idx) => {
+    if (!b.cover || b.cover.trim() === '') {
+      const seed = (b.isbn || b.title || `book${idx}`).replace(/[^0-9a-z]/gi, '') || `book${idx}`;
+      b.cover = `https://picsum.photos/seed/${encodeURIComponent(seed)}/400/600`;
+    }
+    return b;
+  });
   state.bookMap = new Map(state.books.map((b) => [b.isbn, b]));
   renderBooks();
   renderRecommendations();
@@ -237,12 +248,13 @@ async function fetchAdminFines() {
 
 // Rendering
 function renderProfile() {
-  qs('#profile-name').textContent = state.user?.fullName || state.user?.username || 'User';
+  const user = state.user || {};
+  qs('#profile-name').textContent = user.fullName || user.username || 'User';
   qs('#profile-role').textContent = state.role || '';
-  qs('#avatar').textContent = (state.user?.username || 'U').slice(0, 2).toUpperCase();
-  qs('#welcome-text').textContent = `Welcome ${state.user?.fullName || state.user?.username || ''}!`;
+  qs('#avatar').textContent = (user.username || 'U').slice(0, 2).toUpperCase();
+  qs('#welcome-text').textContent = `Welcome ${user.fullName || user.username || ''}!`;
   qs('#welcome-date').textContent = new Date().toLocaleString();
-  qs('#admin-welcome').textContent = `Welcome ${state.user?.fullName || ''}!`;
+  qs('#admin-welcome').textContent = `Welcome ${user.fullName || ''}!`;
   qs('#admin-date').textContent = new Date().toLocaleString();
 }
 
@@ -277,11 +289,16 @@ function setCachedCover(isbn, url) {
 }
 
 async function fetchOpenLibrarySearchCover(book) {
-  const key = `${book?.title || ''}|${book?.authors?.map?.((a) => a.name).join(' ') || book?.author || ''}`.trim();
+  const parts = [];
+  const title = (book?.title || '').trim();
+  const authors = (book?.authors?.map?.((a) => a.name).join(' ') || book?.author || '').trim();
+  if (title) parts.push(title);
+  if (authors) parts.push(authors);
+  if (!parts.length) return null;
+  const key = parts.join('|');
   if (searchCacheMem.has(key)) return searchCacheMem.get(key);
-  if (!key) return null;
   try {
-    const resp = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(key)}`);
+    const resp = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(parts.join(' '))}`);
     if (!resp.ok) throw new Error('search failed');
     const data = await resp.json();
     const doc = data?.docs?.find((d) => d.cover_i || (d.isbn && d.isbn.length));
@@ -874,6 +891,8 @@ async function reduceFine(fineId, amount) {
 let availableTouched = false; // for auto-fill behavior on add form
 let confirmCb = null; // confirm modal callback
 let selectedPayFine = null;
+let isPaying = false;
+let payError = '';
 
 function parseIntSafe(val) {
   const n = Number(val);
@@ -1050,27 +1069,54 @@ function openPayModal(fine) {
   const modal = qs('#pay-modal');
   const meta = qs('#pay-meta');
   const input = qs('#pay-amount-input');
+  const err = qs('#pay-error');
+  if (err) err.textContent = '';
+  isPaying = false;
   const remaining = Number((fine.remainingAmount ?? fine.fineAmount ?? 0));
   if (meta) meta.textContent = `${fine.username || ''} — Remaining $${remaining.toFixed(2)}`;
   if (input) {
     input.value = remaining.toFixed(2);
     input.max = remaining;
+    input.disabled = false;
   }
   modal?.classList.remove('hidden');
+  // allow backdrop click to close when not submitting
+  modal.onclick = (e) => {
+    if (isPaying) return;
+    if (e.target === modal) closePayModal();
+  };
+  window.onkeydown = (e) => { if (!isPaying && e.key === 'Escape') closePayModal(); };
 }
 function closePayModal() {
   selectedPayFine = null;
+  isPaying = false;
+  const err = qs('#pay-error');
+  if (err) err.textContent = '';
   qs('#pay-modal')?.classList.add('hidden');
+  window.onkeydown = null;
 }
 async function confirmPayModal() {
+  if (isPaying) return;
   if (!selectedPayFine) { closePayModal(); return; }
   const input = qs('#pay-amount-input');
+  const err = qs('#pay-error');
   const amt = Number(input?.value || 0);
-  if (!amt || amt < 0) { showMessage('Enter amount to pay'); return; }
-  await api(`/fines/${selectedPayFine.fineId}/pay`, { method: 'PATCH', body: JSON.stringify({ amount: amt }) });
-  await Promise.all([fetchAdminFines(), fetchAdminStats()]);
-  closePayModal();
-  showMessage('Payment applied');
+  const remaining = Number((selectedPayFine.remainingAmount ?? selectedPayFine.fineAmount ?? 0));
+  if (!amt || amt <= 0) { if (err) err.textContent = 'Enter amount greater than 0'; else showMessage('Enter amount greater than 0'); return; }
+  if (amt > remaining) { if (err) err.textContent = 'Amount cannot exceed remaining'; else showMessage('Amount cannot exceed remaining'); return; }
+  try {
+    isPaying = true;
+    if (input) input.disabled = true;
+    await api(`/fines/${selectedPayFine.fineId}/pay`, { method: 'PATCH', body: JSON.stringify({ amount: amt }) });
+    await Promise.all([fetchAdminFines(), fetchAdminStats()]);
+    closePayModal();
+    showMessage('Payment applied');
+  } catch (e) {
+    if (err) err.textContent = e.message || 'Payment failed';
+  } finally {
+    isPaying = false;
+    if (input) input.disabled = false;
+  }
 }
 
 function handleSearchBooks(e) {
@@ -1103,6 +1149,10 @@ function wireEvents() {
   qs('#modal-close').addEventListener('click', closeModal);
   qs('#modal-borrow').addEventListener('click', () => { if (modalBook) borrowBook(modalBook.isbn); closeModal(); });
   qs('#modal-reserve').addEventListener('click', () => { if (modalBook) reserveBook(modalBook.isbn); closeModal(); });
+  // Pay modal buttons (avoid inline handlers)
+  qs('#pay-close-btn')?.addEventListener('click', closePayModal);
+  qs('#pay-cancel-btn')?.addEventListener('click', closePayModal);
+  qs('#pay-apply-btn')?.addEventListener('click', (e) => { e.preventDefault(); confirmPayModal(); });
   qs('#books-search').addEventListener('input', handleSearchBooks);
   qsa('.nav-item').forEach((btn) => btn.addEventListener('click', () => {
     const section = btn.dataset.section;
