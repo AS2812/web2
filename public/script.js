@@ -57,6 +57,8 @@ try {
   coverCacheStorage = {};
 }
 const searchCacheMem = new Map();
+// ensure unique cover assignment per book key
+const coverAssignments = new Map();
 
 function stableCoverIndex(key) {
   const str = String(key || '');
@@ -68,18 +70,34 @@ function stableCoverIndex(key) {
   return Math.abs(hash) % COVER_URLS.length;
 }
 
+function coverKeyForBook(book, idx = 0) {
+  return (
+    sanitizeIsbn(book?.isbn || book?.isbn13 || book?.isbn10) ||
+    book?.id ||
+    book?.title ||
+    String(idx)
+  );
+}
+
+function stableCoverIndexForBook(book, idx = 0) {
+  return stableCoverIndex(coverKeyForBook(book, idx));
+}
+
 function getCoverUrl(book, index = 0) {
   if (book?.cover && /^https?:\/\//i.test(book.cover)) return book.cover;
   const cleanIsbn = sanitizeIsbn(book?.isbn || book?.isbn13 || book?.isbn10);
   if (cleanIsbn) return `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-${COVER_SIZE}.jpg`;
-  return COVER_URLS[stableCoverIndex(book?.id || book?.title || index)];
+  return COVER_URLS[stableCoverIndexForBook(book, index)];
 }
 
-function attachCoverFallback(imgEl, index = 0) {
-  imgEl.onerror = () => {
-    imgEl.onerror = null;
-    imgEl.src = COVER_URLS[(index + 1) % COVER_URLS.length];
-  };
+function buildCoverCandidates(book, idx = 0) {
+  const candidates = [];
+  const primary = getCoverUrl(book, idx);
+  if (primary) candidates.push(primary);
+  const isbn10 = sanitizeIsbn(book?.isbn10);
+  if (isbn10) candidates.push(`https://covers.openlibrary.org/b/isbn/${isbn10}-${COVER_SIZE}.jpg`);
+  candidates.push(COVER_URLS[stableCoverIndexForBook(book, idx)]);
+  return candidates.filter(Boolean);
 }
 
 const state = {
@@ -238,24 +256,62 @@ async function fetchProfile() {
 }
 
 async function fetchBooks() {
+  coverAssignments.clear();
   state.books = await api('/books');
   // Static real cover pool (Open Library) to guarantee no placeholders
   const coverPool = COVER_URLS;
-  const realSeeds = [
-    { title: 'The Great Gatsby', authors: [{ name: 'F. Scott Fitzgerald' }], category: 'Classic', isbn: '9780743273565', cover: 'https://covers.openlibrary.org/b/isbn/9780743273565-L.jpg?default=false' },
-    { title: '1984', authors: [{ name: 'George Orwell' }], category: 'Dystopian', isbn: '9780451524935', cover: 'https://covers.openlibrary.org/b/isbn/9780451524935-L.jpg?default=false' },
-    { title: 'Pride and Prejudice', authors: [{ name: 'Jane Austen' }], category: 'Romance', isbn: '9780141439518', cover: 'https://covers.openlibrary.org/b/isbn/9780141439518-L.jpg?default=false' },
-    { title: 'The Hobbit', authors: [{ name: 'J.R.R. Tolkien' }], category: 'Fantasy', isbn: '9780547928227', cover: 'https://covers.openlibrary.org/b/isbn/9780547928227-L.jpg?default=false' },
-    { title: 'To Kill a Mockingbird', authors: [{ name: 'Harper Lee' }], category: 'Classic', isbn: '9780061120084', cover: 'https://covers.openlibrary.org/b/isbn/9780061120084-L.jpg?default=false' },
-    { title: 'The Catcher in the Rye', authors: [{ name: 'J.D. Salinger' }], category: 'Fiction', isbn: '9780316769174', cover: 'https://covers.openlibrary.org/b/isbn/9780316769174-L.jpg?default=false' },
-    { title: 'The Alchemist', authors: [{ name: 'Paulo Coelho' }], category: 'Fiction', isbn: '9780061122415', cover: 'https://covers.openlibrary.org/b/isbn/9780061122415-L.jpg?default=false' },
-    { title: 'The Silent Patient', authors: [{ name: 'Alex Michaelides' }], category: 'Thriller', isbn: '9781250301697', cover: 'https://covers.openlibrary.org/b/isbn/9781250301697-L.jpg?default=false' },
-    { title: 'Atomic Habits', authors: [{ name: 'James Clear' }], category: 'Non-Fiction', isbn: '9780735211292', cover: 'https://covers.openlibrary.org/b/isbn/9780735211292-L.jpg?default=false' },
-    { title: 'Becoming', authors: [{ name: 'Michelle Obama' }], category: 'Biography', isbn: '9781524763138', cover: 'https://covers.openlibrary.org/b/isbn/9781524763138-L.jpg?default=false' }
+  const assignCover = (key) => {
+    const k = key || `k${coverAssignments.size}`;
+    if (coverAssignments.has(k)) return coverAssignments.get(k);
+    const chosen = coverPool[coverAssignments.size % coverPool.length];
+    coverAssignments.set(k, chosen);
+    return chosen;
+  };
+  const popularCatalog = [
+    { title: 'The Pillars of the Earth', authors: [{ name: 'Ken Follett' }], category: 'Historical Fiction', isbn: '9780385533225' },
+    { title: 'The Odyssey', authors: [{ name: 'Homer' }], category: 'Classic', isbn: '9780140449136' },
+    { title: 'The Help', authors: [{ name: 'Kathryn Stockett' }], category: 'Fiction', isbn: '9780307455925' },
+    { title: 'The Kite Runner', authors: [{ name: 'Khaled Hosseini' }], category: 'Fiction', isbn: '9780375507250' },
+    { title: 'The Lovely Bones', authors: [{ name: 'Alice Sebold' }], category: 'Fiction', isbn: '9780385721790' },
+    { title: 'Gone Girl', authors: [{ name: 'Gillian Flynn' }], category: 'Thriller', isbn: '9780593441190' },
+    { title: 'Dune', authors: [{ name: 'Frank Herbert' }], category: 'Science Fiction', isbn: '9780441013593' },
+    { title: 'The Night Circus', authors: [{ name: 'Erin Morgenstern' }], category: 'Fantasy', isbn: '9781250301703' },
+    { title: 'The Fifth Season', authors: [{ name: 'N. K. Jemisin' }], category: 'Fantasy', isbn: '9780765382030' },
+    { title: 'The Priory of the Orange Tree', authors: [{ name: 'Samantha Shannon' }], category: 'Fantasy', isbn: '9781635575569' },
+    { title: 'A Day of Fallen Night', authors: [{ name: 'Samantha Shannon' }], category: 'Fantasy', isbn: '9781635575583' },
+    { title: 'Mexican Gothic', authors: [{ name: 'Silvia Moreno-Garcia' }], category: 'Horror', isbn: '9781635575606' },
+    { title: 'Babel', authors: [{ name: 'R. F. Kuang' }], category: 'Fantasy', isbn: '9781635575620' },
+    { title: 'The Bone Season', authors: [{ name: 'Samantha Shannon' }], category: 'Fantasy', isbn: '9781635577990' },
+    { title: 'The Goldfinch', authors: [{ name: 'Donna Tartt' }], category: 'Fiction', isbn: '9780307742483' },
+    { title: 'The Invisible Life of Addie LaRue', authors: [{ name: 'V. E. Schwab' }], category: 'Fantasy', isbn: '9780063021433' },
+    { title: 'Project Hail Mary', authors: [{ name: 'Andy Weir' }], category: 'Science Fiction', isbn: '9780593550403' },
+    { title: 'Fourth Wing', authors: [{ name: 'Rebecca Yarros' }], category: 'Fantasy', isbn: '9781250872272' },
+    { title: 'The Shadow of the Wind', authors: [{ name: 'Carlos Ruiz Zafón' }], category: 'Mystery', isbn: '9780143127741' },
+    { title: 'Where the Crawdads Sing', authors: [{ name: 'Delia Owens' }], category: 'Fiction', isbn: '9781984801456' },
+    { title: 'The Silent Patient', authors: [{ name: 'Alex Michaelides' }], category: 'Thriller', isbn: '9780593972700' },
+    { title: 'The Night Watchman', authors: [{ name: 'Louise Erdrich' }], category: 'Fiction', isbn: '9780385548984' },
+    { title: 'The Midnight Library', authors: [{ name: 'Matt Haig' }], category: 'Fiction', isbn: '9781250328175' },
+    { title: 'Tomorrow, and Tomorrow, and Tomorrow', authors: [{ name: 'Gabrielle Zevin' }], category: 'Fiction', isbn: '9780593979419' },
+    { title: 'Lessons in Chemistry', authors: [{ name: 'Bonnie Garmus' }], category: 'Fiction', isbn: '9780593820247' },
+    { title: 'Educated', authors: [{ name: 'Tara Westover' }], category: 'Memoir', isbn: '9780062406682' },
+    { title: 'Circe', authors: [{ name: 'Madeline Miller' }], category: 'Fantasy', isbn: '9781250334886' },
+    { title: 'Remarkably Bright Creatures', authors: [{ name: 'Shelby Van Pelt' }], category: 'Fiction', isbn: '9780593595039' },
+    { title: 'The House in the Cerulean Sea', authors: [{ name: 'TJ Klune' }], category: 'Fantasy', isbn: '9780802158741' },
+    { title: 'The Seven Husbands of Evelyn Hugo', authors: [{ name: 'Taylor Jenkins Reid' }], category: 'Fiction', isbn: '9780593804728' },
+    { title: 'Pride and Prejudice', authors: [{ name: 'Jane Austen' }], category: 'Classic', isbn: '9780553212419' },
+    { title: 'Code Complete', authors: [{ name: 'Steve McConnell' }], category: 'Technology', isbn: '9780072263367' },
+    { title: 'Clean Code', authors: [{ name: 'Robert C. Martin' }], category: 'Technology', isbn: '9781449302399' },
+    { title: 'Automate the Boring Stuff with Python', authors: [{ name: 'Al Sweigart' }], category: 'Technology', isbn: '9781593273897' },
+    { title: 'True Grit', authors: [{ name: 'Charles Portis' }], category: 'Western', isbn: '9780679600116' },
+    { title: 'American Gods', authors: [{ name: 'Neil Gaiman' }], category: 'Fantasy', isbn: '9780140062866' },
+    { title: 'Wuthering Heights', authors: [{ name: 'Emily Brontë' }], category: 'Classic', isbn: '9781853262722' },
+    { title: 'The First 20 Minutes', authors: [{ name: 'Gretchen Reynolds' }], category: 'Health', isbn: '9781984832003' },
+    { title: 'Walden', authors: [{ name: 'Henry David Thoreau' }], category: 'Classic', isbn: '9780143037743' },
+    { title: 'The Girl on the Train', authors: [{ name: 'Paula Hawkins' }], category: 'Thriller', isbn: '9780804172448' }
   ];
   // ensure every book has a usable cover to avoid broken images
   state.books = state.books.map((b, idx) => {
-    const seed = realSeeds[idx % realSeeds.length];
+    const seed = popularCatalog[idx % popularCatalog.length];
     const looksPlaceholder = /^Book Title/i.test(b.title || '');
     if (looksPlaceholder || !b.title) {
       b.title = seed.title;
@@ -264,17 +320,17 @@ async function fetchBooks() {
       b.isbn = b.isbn || seed.isbn;
       b.cover = seed.cover;
     }
-    const poolCover = coverPool[idx % coverPool.length];
+    const cleanIsbn = sanitizeIsbn(b.isbn);
+    const poolCover = assignCover(cleanIsbn || b.title || b.id || idx);
     if (!b.cover || (typeof b.cover === 'string' && !/^https?:\/\//i.test(b.cover))) {
       b.cover = poolCover;
     }
     const hasCover = b.cover && b.cover.trim() !== '';
-    const cleanIsbn = (b.isbn || '').replace(/[-\s]/g, '').trim();
     if (!hasCover && cleanIsbn) {
       b.cover = `https://covers.openlibrary.org/b/isbn/${encodeURIComponent(cleanIsbn)}-${COVER_SIZE}.jpg`;
     }
     if (!b.cover || b.cover.trim() === '') {
-      b.cover = COVER_URLS[stableCoverIndex(b.isbn || b.title || idx)];
+      b.cover = assignCover(cleanIsbn || b.title || b.id || idx);
     }
     return b;
   });
@@ -418,7 +474,7 @@ function coverCandidateList(book) {
   const isbn10 = book?.isbn10;
   if (isbn13) list.push(buildOpenLibraryUrl(isbn13));
   if (isbn10) list.push(buildOpenLibraryUrl(isbn10));
-  const idx = stableCoverIndex(book?.isbn || book?.title || book?.id || '');
+  const idx = stableCoverIndexForBook(book, 0);
   list.push(COVER_URLS[idx]);
   return list;
 }
@@ -441,15 +497,8 @@ async function setCover(imgEl, book) {
     imgEl.src = cachedResolved;
     return;
   }
-  const candidates = [];
-  const cached = cacheKey ? getCachedCover(cacheKey) : null;
-  if (cached) candidates.push(cached);
-  candidates.push(...coverCandidateList(book));
-  if (candidates.length === 0) {
-    const searched = await fetchOpenLibrarySearchCover(book);
-    if (searched) candidates.push(searched);
-  }
-  if (candidates.length === 0) candidates.push(COVER_URLS[stableCoverIndex(cacheKey || title || 'fallback')]);
+  const candidates = buildCoverCandidates(book);
+  if (candidates.length === 0) candidates.push(COVER_URLS[stableCoverIndexForBook(book, 0)]);
 
   let idx = 0;
   const tryNext = () => {
@@ -463,7 +512,7 @@ async function setCover(imgEl, book) {
       return;
     }
     // final stable fallback and cache it to avoid repeated failed requests
-    const fallback = COVER_URLS[stableCoverIndex(cacheKey || title || 0)];
+    const fallback = COVER_URLS[stableCoverIndexForBook(book, 0)];
     imgEl.classList.add('no-cover');
     imgEl.src = fallback;
     if (cacheKey) setCachedCover(cacheKey, fallback);
