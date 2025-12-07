@@ -13,8 +13,9 @@ app.use(helmet({
     useDefaults: true,
     directives: {
       "default-src": ["'self'"],
-      "img-src": ["'self'", "data:", "blob:", "https://covers.openlibrary.org"],
-      "connect-src": ["'self'", "https://openlibrary.org"],
+      "script-src": ["'self'"],
+      "img-src": ["'self'", "data:", "https://books.google.com", "https://books.googleusercontent.com", "https://*.googleusercontent.com"],
+      "connect-src": ["'self'", "https://www.googleapis.com"],
       "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       "font-src": ["'self'", "data:", "https://fonts.gstatic.com"]
     }

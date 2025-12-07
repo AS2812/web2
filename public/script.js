@@ -4,100 +4,123 @@ const qsa = (sel) => Array.from(document.querySelectorAll(sel));
 if (!window.profile) window.profile = {};
 if (!window.profile.profile) window.profile.profile = {};
 const API_BASE = '';
-const COVER_SIZE = 'M';
-const COVER_URLS = [
-  "https://covers.openlibrary.org/b/isbn/9780385533225-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780140449136-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780307455925-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780375507250-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780385721790-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780593441190-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780441013593-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781250301703-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780765382030-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781635575569-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781635575583-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781635575606-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781635575620-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781635577990-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780307742483-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780063021433-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780593550403-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781250872272-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780143127741-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781984801456-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780593972700-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780385548984-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781250328175-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780593979419-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780593820247-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780062406682-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781250334886-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780593595039-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780802158741-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780593804728-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780553212419-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780072263367-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781449302399-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781593273897-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780679600116-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780140062866-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781853262722-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9781984832003-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780143037743-M.jpg",
-  "https://covers.openlibrary.org/b/isbn/9780804172448-M.jpg"
-];
-const CACHE_KEY = 'coverCache_v1';
+const LOCAL_PLACEHOLDER = '/assets/cover-placeholder.png';
+const GOOGLE_BOOKS_ENDPOINT = 'https://www.googleapis.com/books/v1/volumes';
+const GOOGLE_FIELDS = 'items(id,volumeInfo/title,volumeInfo/authors,volumeInfo/imageLinks/extraLarge,volumeInfo/imageLinks/large,volumeInfo/imageLinks/medium,volumeInfo/imageLinks/small,volumeInfo/imageLinks/thumbnail,volumeInfo/imageLinks/smallThumbnail)';
+const GOOGLE_API_KEY = window.GOOGLE_BOOKS_KEY || '';
+const COVER_CACHE_KEY = 'coverCache_v3';
+const GOOGLE_CACHE_KEY = 'googleCoverCache_v2';
 const coverCacheMem = new Map();
-let coverCacheStorage = {};
-try {
-  const stored = localStorage.getItem(CACHE_KEY);
-  coverCacheStorage = stored ? JSON.parse(stored) : {};
-} catch (err) {
-  coverCacheStorage = {};
-}
-const searchCacheMem = new Map();
-// ensure unique cover assignment per book key
-const coverAssignments = new Map();
+const googleCoverCacheMem = new Map();
+const pendingCoverPromises = new Map(); // avoids duplicate cover fetches per key
+let coverCacheStorage = loadCache(COVER_CACHE_KEY);
+let googleCoverCacheStorage = loadCache(GOOGLE_CACHE_KEY);
 
-function stableCoverIndex(key) {
-  const str = String(key || '');
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
+function loadCache(key) {
+  try {
+    const stored = localStorage.getItem(key);
+    const parsed = stored ? JSON.parse(stored) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
   }
-  return Math.abs(hash) % COVER_URLS.length;
 }
 
-function coverKeyForBook(book, idx = 0) {
-  return (
-    sanitizeIsbn(book?.isbn || book?.isbn13 || book?.isbn10) ||
-    book?.id ||
-    book?.title ||
-    String(idx)
-  );
+function forceHttps(url) {
+  if (!url) return null;
+  return url.replace(/^http:/i, 'https:');
 }
 
-function stableCoverIndexForBook(book, idx = 0) {
-  return stableCoverIndex(coverKeyForBook(book, idx));
+function sanitizeIsbn(isbn) {
+  return (isbn || '').replace(/[-\s]/g, '').trim();
 }
 
-function getCoverUrl(book, index = 0) {
-  if (book?.cover && /^https?:\/\//i.test(book.cover)) return book.cover;
+function getCachedValue(map, storage, key) {
+  if (!key) return undefined;
+  if (map.has(key)) return map.get(key);
+  if (Object.prototype.hasOwnProperty.call(storage, key)) {
+    const val = storage[key];
+    map.set(key, val);
+    return val;
+  }
+  return undefined;
+}
+
+function setCachedValue(map, storage, storageKey, key, value) {
+  if (!key) return;
+  map.set(key, value);
+  storage[key] = value;
+  try { localStorage.setItem(storageKey, JSON.stringify(storage)); } catch { /* ignore */ }
+}
+
+function coverCacheKey(book, idx = 0) {
+  const isbn = sanitizeIsbn(book?.isbn || book?.isbn13 || book?.isbn10);
+  const title = (book?.title || '').trim();
+  const authorStr = ((book?.authors || []).map((a) => a?.name || a).filter(Boolean).join('|') || book?.author || '').trim();
+  return isbn || (title || authorStr ? `${title}|${authorStr}` : String(idx));
+}
+
+function getCachedCoverByKey(key) {
+  return getCachedValue(coverCacheMem, coverCacheStorage, key);
+}
+
+function setCachedCoverByKey(key, url) {
+  setCachedValue(coverCacheMem, coverCacheStorage, COVER_CACHE_KEY, key, url ?? null);
+}
+
+function pickBestGoogleImage(imageLinks) {
+  if (!imageLinks) return null;
+  const order = ['extraLarge','large','medium','small','thumbnail','smallThumbnail'];
+  for (const key of order) {
+    if (imageLinks[key]) return forceHttps(imageLinks[key]);
+  }
+  return null;
+}
+
+async function fetchGoogleCover(book = {}) {
   const cleanIsbn = sanitizeIsbn(book?.isbn || book?.isbn13 || book?.isbn10);
-  if (cleanIsbn) return `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-${COVER_SIZE}.jpg`;
-  return COVER_URLS[stableCoverIndexForBook(book, index)];
-}
+  const title = (book?.title || '').trim();
+  const authorList = (book?.authors || []).map((a) => a?.name || a).filter(Boolean);
+  const authorStr = (authorList.length ? authorList.join(' ') : (book?.author || '')).trim();
+  if (!cleanIsbn && !title) return null;
 
-function buildCoverCandidates(book, idx = 0) {
-  const candidates = [];
-  const primary = getCoverUrl(book, idx);
-  if (primary) candidates.push(primary);
-  const isbn10 = sanitizeIsbn(book?.isbn10);
-  if (isbn10) candidates.push(`https://covers.openlibrary.org/b/isbn/${isbn10}-${COVER_SIZE}.jpg`);
-  candidates.push(COVER_URLS[stableCoverIndexForBook(book, idx)]);
-  return candidates.filter(Boolean);
+  const queries = [];
+  if (cleanIsbn) queries.push({ key: `isbn:${cleanIsbn}`, q: `isbn:${cleanIsbn}` });
+  if (title) {
+    const authorClause = authorStr ? `+inauthor:${authorStr}` : '';
+    queries.push({ key: `${title}|${authorStr}`, q: `intitle:${title}${authorClause}` });
+  }
+
+  for (const { key, q } of queries) {
+    const cached = getCachedValue(googleCoverCacheMem, googleCoverCacheStorage, key);
+    if (cached !== undefined) {
+      if (cached) return cached;
+      continue;
+    }
+    try {
+      const url = new URL(GOOGLE_BOOKS_ENDPOINT);
+      url.searchParams.set('q', q);
+      url.searchParams.set('fields', GOOGLE_FIELDS);
+      url.searchParams.set('maxResults', '5');
+      url.searchParams.set('printType', 'books');
+      if (GOOGLE_API_KEY) url.searchParams.set('key', GOOGLE_API_KEY);
+      const resp = await fetch(url.toString());
+      if (!resp.ok) {
+        setCachedValue(googleCoverCacheMem, googleCoverCacheStorage, GOOGLE_CACHE_KEY, key, null);
+        continue;
+      }
+      const data = await resp.json();
+      const volume = data?.items?.find((it) => pickBestGoogleImage(it?.volumeInfo?.imageLinks));
+      const best = pickBestGoogleImage(volume?.volumeInfo?.imageLinks);
+      const finalUrl = forceHttps(best);
+      setCachedValue(googleCoverCacheMem, googleCoverCacheStorage, GOOGLE_CACHE_KEY, key, finalUrl || null);
+      if (finalUrl) return finalUrl;
+    } catch (err) {
+      console.warn('Google Books cover fetch failed', err);
+      setCachedValue(googleCoverCacheMem, googleCoverCacheStorage, GOOGLE_CACHE_KEY, key, null);
+    }
+  }
+  return null;
 }
 
 const state = {
@@ -256,83 +279,14 @@ async function fetchProfile() {
 }
 
 async function fetchBooks() {
-  coverAssignments.clear();
   state.books = await api('/books');
-  // Static real cover pool (Open Library) to guarantee no placeholders
-  const coverPool = COVER_URLS;
-  const assignCover = (key) => {
-    const k = key || `k${coverAssignments.size}`;
-    if (coverAssignments.has(k)) return coverAssignments.get(k);
-    const chosen = coverPool[coverAssignments.size % coverPool.length];
-    coverAssignments.set(k, chosen);
-    return chosen;
-  };
-  const popularCatalog = [
-    { title: 'The Pillars of the Earth', authors: [{ name: 'Ken Follett' }], category: 'Historical Fiction', isbn: '9780385533225' },
-    { title: 'The Odyssey', authors: [{ name: 'Homer' }], category: 'Classic', isbn: '9780140449136' },
-    { title: 'The Help', authors: [{ name: 'Kathryn Stockett' }], category: 'Fiction', isbn: '9780307455925' },
-    { title: 'The Kite Runner', authors: [{ name: 'Khaled Hosseini' }], category: 'Fiction', isbn: '9780375507250' },
-    { title: 'The Lovely Bones', authors: [{ name: 'Alice Sebold' }], category: 'Fiction', isbn: '9780385721790' },
-    { title: 'Gone Girl', authors: [{ name: 'Gillian Flynn' }], category: 'Thriller', isbn: '9780593441190' },
-    { title: 'Dune', authors: [{ name: 'Frank Herbert' }], category: 'Science Fiction', isbn: '9780441013593' },
-    { title: 'The Night Circus', authors: [{ name: 'Erin Morgenstern' }], category: 'Fantasy', isbn: '9781250301703' },
-    { title: 'The Fifth Season', authors: [{ name: 'N. K. Jemisin' }], category: 'Fantasy', isbn: '9780765382030' },
-    { title: 'The Priory of the Orange Tree', authors: [{ name: 'Samantha Shannon' }], category: 'Fantasy', isbn: '9781635575569' },
-    { title: 'A Day of Fallen Night', authors: [{ name: 'Samantha Shannon' }], category: 'Fantasy', isbn: '9781635575583' },
-    { title: 'Mexican Gothic', authors: [{ name: 'Silvia Moreno-Garcia' }], category: 'Horror', isbn: '9781635575606' },
-    { title: 'Babel', authors: [{ name: 'R. F. Kuang' }], category: 'Fantasy', isbn: '9781635575620' },
-    { title: 'The Bone Season', authors: [{ name: 'Samantha Shannon' }], category: 'Fantasy', isbn: '9781635577990' },
-    { title: 'The Goldfinch', authors: [{ name: 'Donna Tartt' }], category: 'Fiction', isbn: '9780307742483' },
-    { title: 'The Invisible Life of Addie LaRue', authors: [{ name: 'V. E. Schwab' }], category: 'Fantasy', isbn: '9780063021433' },
-    { title: 'Project Hail Mary', authors: [{ name: 'Andy Weir' }], category: 'Science Fiction', isbn: '9780593550403' },
-    { title: 'Fourth Wing', authors: [{ name: 'Rebecca Yarros' }], category: 'Fantasy', isbn: '9781250872272' },
-    { title: 'The Shadow of the Wind', authors: [{ name: 'Carlos Ruiz Zafón' }], category: 'Mystery', isbn: '9780143127741' },
-    { title: 'Where the Crawdads Sing', authors: [{ name: 'Delia Owens' }], category: 'Fiction', isbn: '9781984801456' },
-    { title: 'The Silent Patient', authors: [{ name: 'Alex Michaelides' }], category: 'Thriller', isbn: '9780593972700' },
-    { title: 'The Night Watchman', authors: [{ name: 'Louise Erdrich' }], category: 'Fiction', isbn: '9780385548984' },
-    { title: 'The Midnight Library', authors: [{ name: 'Matt Haig' }], category: 'Fiction', isbn: '9781250328175' },
-    { title: 'Tomorrow, and Tomorrow, and Tomorrow', authors: [{ name: 'Gabrielle Zevin' }], category: 'Fiction', isbn: '9780593979419' },
-    { title: 'Lessons in Chemistry', authors: [{ name: 'Bonnie Garmus' }], category: 'Fiction', isbn: '9780593820247' },
-    { title: 'Educated', authors: [{ name: 'Tara Westover' }], category: 'Memoir', isbn: '9780062406682' },
-    { title: 'Circe', authors: [{ name: 'Madeline Miller' }], category: 'Fantasy', isbn: '9781250334886' },
-    { title: 'Remarkably Bright Creatures', authors: [{ name: 'Shelby Van Pelt' }], category: 'Fiction', isbn: '9780593595039' },
-    { title: 'The House in the Cerulean Sea', authors: [{ name: 'TJ Klune' }], category: 'Fantasy', isbn: '9780802158741' },
-    { title: 'The Seven Husbands of Evelyn Hugo', authors: [{ name: 'Taylor Jenkins Reid' }], category: 'Fiction', isbn: '9780593804728' },
-    { title: 'Pride and Prejudice', authors: [{ name: 'Jane Austen' }], category: 'Classic', isbn: '9780553212419' },
-    { title: 'Code Complete', authors: [{ name: 'Steve McConnell' }], category: 'Technology', isbn: '9780072263367' },
-    { title: 'Clean Code', authors: [{ name: 'Robert C. Martin' }], category: 'Technology', isbn: '9781449302399' },
-    { title: 'Automate the Boring Stuff with Python', authors: [{ name: 'Al Sweigart' }], category: 'Technology', isbn: '9781593273897' },
-    { title: 'True Grit', authors: [{ name: 'Charles Portis' }], category: 'Western', isbn: '9780679600116' },
-    { title: 'American Gods', authors: [{ name: 'Neil Gaiman' }], category: 'Fantasy', isbn: '9780140062866' },
-    { title: 'Wuthering Heights', authors: [{ name: 'Emily Brontë' }], category: 'Classic', isbn: '9781853262722' },
-    { title: 'The First 20 Minutes', authors: [{ name: 'Gretchen Reynolds' }], category: 'Health', isbn: '9781984832003' },
-    { title: 'Walden', authors: [{ name: 'Henry David Thoreau' }], category: 'Classic', isbn: '9780143037743' },
-    { title: 'The Girl on the Train', authors: [{ name: 'Paula Hawkins' }], category: 'Thriller', isbn: '9780804172448' }
-  ];
-  // ensure every book has a usable cover to avoid broken images
-  state.books = state.books.map((b, idx) => {
-    const seed = popularCatalog[idx % popularCatalog.length];
-    const looksPlaceholder = /^Book Title/i.test(b.title || '');
-    if (looksPlaceholder || !b.title) {
-      b.title = seed.title;
-      b.authors = seed.authors;
-      b.category = b.category || seed.category;
-      b.isbn = b.isbn || seed.isbn;
-      b.cover = seed.cover;
-    }
-    const cleanIsbn = sanitizeIsbn(b.isbn);
-    const poolCover = assignCover(cleanIsbn || b.title || b.id || idx);
-    if (!b.cover || (typeof b.cover === 'string' && !/^https?:\/\//i.test(b.cover))) {
-      b.cover = poolCover;
-    }
-    const hasCover = b.cover && b.cover.trim() !== '';
-    if (!hasCover && cleanIsbn) {
-      b.cover = `https://covers.openlibrary.org/b/isbn/${encodeURIComponent(cleanIsbn)}-${COVER_SIZE}.jpg`;
-    }
-    if (!b.cover || b.cover.trim() === '') {
-      b.cover = assignCover(cleanIsbn || b.title || b.id || idx);
-    }
-    return b;
+  state.books = state.books.map((b) => {
+    const normalizedIsbn = sanitizeIsbn(b.isbn || b.isbn13 || b.isbn10);
+    return {
+      ...b,
+      isbn: normalizedIsbn || b.isbn,
+      cover: b.cover && /^https?:\/\//i.test(b.cover) ? forceHttps(b.cover) : null
+    };
   });
   state.bookMap = new Map(state.books.map((b) => [b.isbn, b]));
   renderBooks();
@@ -409,121 +363,71 @@ function renderProfile() {
   qs('#admin-date').textContent = new Date().toLocaleString();
 }
 
-function sanitizeIsbn(isbn) {
-  return (isbn || '').replace(/[-\s]/g, '').trim();
+function getCachedCover(isbnOrKey) {
+  const key = sanitizeIsbn(isbnOrKey) || String(isbnOrKey || '').trim();
+  if (!key) return undefined;
+  return getCachedCoverByKey(key);
 }
-function buildOpenLibraryUrl(isbn, size = COVER_SIZE) {
-  const clean = sanitizeIsbn(isbn);
-  if (!clean) return null;
-  return `https://covers.openlibrary.org/b/isbn/${clean}-${size}.jpg?default=false`;
-}
-function getCachedCover(isbn) {
-  const clean = sanitizeIsbn(isbn) || String(isbn || '').trim();
-  if (!clean) return null;
-  if (coverCacheMem.has(clean)) return coverCacheMem.get(clean);
-  if (coverCacheStorage[clean]) {
-    coverCacheMem.set(clean, coverCacheStorage[clean]);
-    return coverCacheStorage[clean];
-  }
-  return null;
-}
-function setCachedCover(isbn, url) {
-  const clean = sanitizeIsbn(isbn) || String(isbn || '').trim();
-  if (!clean) return;
-  if (!url) return;
-  coverCacheMem.set(clean, url);
-  coverCacheStorage[clean] = url;
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(coverCacheStorage)); } catch {}
+function setCachedCover(isbnOrKey, url) {
+  const key = sanitizeIsbn(isbnOrKey) || String(isbnOrKey || '').trim();
+  if (!key) return;
+  setCachedCoverByKey(key, url);
 }
 
-async function fetchOpenLibrarySearchCover(book) {
-  const parts = [];
-  const title = (book?.title || '').trim();
-  const authors = (book?.authors?.map?.((a) => a.name).join(' ') || book?.author || '').trim();
-  if (title) parts.push(title);
-  if (authors) parts.push(authors);
-  if (!parts.length) return null;
-  const key = parts.join('|');
-  if (searchCacheMem.has(key)) return searchCacheMem.get(key);
-  try {
-    const resp = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(parts.join(' '))}`);
-    if (!resp.ok) throw new Error('search failed');
-    const data = await resp.json();
-    const doc = data?.docs?.find((d) => d.cover_i || (d.isbn && d.isbn.length));
-    if (!doc) return null;
-    if (doc.cover_i) {
-      const url = `https://covers.openlibrary.org/b/id/${doc.cover_i}-${COVER_SIZE}.jpg?default=false`;
-      searchCacheMem.set(key, url);
-      return url;
-    }
-    if (doc.isbn && doc.isbn.length) {
-      const url = buildOpenLibraryUrl(doc.isbn[0]);
-      searchCacheMem.set(key, url);
-      return url;
-    }
-  } catch (err) {
-    console.warn('OpenLibrary search failed', err);
+async function resolveCoverUrl(book, idx = 0) {
+  const cacheKey = coverCacheKey(book, idx);
+  const cached = cacheKey ? getCachedCoverByKey(cacheKey) : undefined;
+  const existingCover =
+    book?.cover && /^https?:\/\//i.test(book.cover) ? forceHttps(book.cover) : null;
+  if (cached) return cached;
+  if (existingCover) {
+    if (cacheKey) setCachedCoverByKey(cacheKey, existingCover);
+    return existingCover;
   }
-  return null;
+  if (cached === null) return LOCAL_PLACEHOLDER;
+  if (cacheKey && pendingCoverPromises.has(cacheKey)) return pendingCoverPromises.get(cacheKey);
+  const promise = (async () => {
+    const gCover = await fetchGoogleCover(book);
+    if (gCover) {
+      setCachedCoverByKey(cacheKey, gCover);
+      if (book) book.cover = gCover;
+      return gCover;
+    }
+    setCachedCoverByKey(cacheKey, null);
+    return LOCAL_PLACEHOLDER;
+  })().finally(() => {
+    if (cacheKey) pendingCoverPromises.delete(cacheKey);
+  });
+  if (cacheKey) pendingCoverPromises.set(cacheKey, promise);
+  return promise;
 }
-function coverCandidateList(book) {
-  const list = [];
-  const primary = getCoverUrl(book);
-  if (primary) list.push(primary);
-  const isbn13 = book?.isbn13 || book?.isbn;
-  const isbn10 = book?.isbn10;
-  if (isbn13) list.push(buildOpenLibraryUrl(isbn13));
-  if (isbn10) list.push(buildOpenLibraryUrl(isbn10));
-  const idx = stableCoverIndexForBook(book, 0);
-  list.push(COVER_URLS[idx]);
-  return list;
-}
-async function setCover(imgEl, book) {
+
+async function setCover(imgEl, book, idx = 0) {
   const title = book?.title || 'Book';
-  const isbn13 = book?.isbn13 || book?.isbn;
-  const isbn10 = book?.isbn10;
-  const cacheKey = sanitizeIsbn(isbn13 || isbn10) || (book?.cover || book?.id || title);
-  const cachedResolved = cacheKey ? getCachedCover(cacheKey) : null;
+  const cacheKey = coverCacheKey(book, idx);
+  const fallbackCover =
+    book?.cover && /^https?:\/\//i.test(book.cover) ? forceHttps(book.cover) : null;
   imgEl.loading = 'lazy';
   imgEl.decoding = 'async';
   imgEl.alt = `Cover of ${title}`;
-  // If we already have a resolved cover, set it and attach a single fallback, then return.
-  if (cachedResolved) {
-    imgEl.onerror = () => {
-      imgEl.onerror = null;
-      const idx = stableCoverIndex(cacheKey || title || 0);
-      imgEl.src = COVER_URLS[idx];
-    };
-    imgEl.src = cachedResolved;
-    return;
-  }
-  const candidates = buildCoverCandidates(book);
-  if (candidates.length === 0) candidates.push(COVER_URLS[stableCoverIndexForBook(book, 0)]);
-
-  let idx = 0;
-  const tryNext = () => {
-    imgEl.src = candidates[Math.min(idx, candidates.length - 1)];
-    idx += 1;
-  };
-  imgEl.onerror = () => {
+  const cached = cacheKey ? getCachedCoverByKey(cacheKey) : undefined;
+  imgEl.src = cached || fallbackCover || LOCAL_PLACEHOLDER;
+  const useFallback = () => {
     imgEl.onerror = null;
-    if (idx < candidates.length) {
-      tryNext();
-      return;
-    }
-    // final stable fallback and cache it to avoid repeated failed requests
-    const fallback = COVER_URLS[stableCoverIndexForBook(book, 0)];
-    imgEl.classList.add('no-cover');
-    imgEl.src = fallback;
-    if (cacheKey) setCachedCover(cacheKey, fallback);
+    imgEl.src = LOCAL_PLACEHOLDER;
+    if (cacheKey) setCachedCoverByKey(cacheKey, null);
   };
-  imgEl.onload = () => {
-    const cur = imgEl.src;
-    if (cur && cacheKey) {
-      setCachedCover(cacheKey, cur);
+  imgEl.onerror = useFallback;
+  try {
+    const resolved = await resolveCoverUrl(book, idx);
+    if (resolved && resolved !== imgEl.src) {
+      imgEl.onerror = useFallback;
+      imgEl.src = resolved;
+      if (cacheKey) setCachedCoverByKey(cacheKey, resolved);
     }
-  };
-  tryNext();
+  } catch {
+    useFallback();
+  }
 }
 
 function renderRecommendations() {
@@ -981,9 +885,15 @@ function openModal(book) {
   qs('#modal-title').textContent = book.title;
   qs('#modal-authors').textContent = book.authors?.map((a) => a.name).join(', ') || 'Unknown author';
   qs('#modal-genre').textContent = book.category || 'General';
-  qs('#modal-year').textContent = book.publicationDate || '—';
+  qs('#modal-year').textContent = book.publicationDate || '-';
   qs('#modal-availability').textContent = book.copiesAvailable > 0 ? 'Available' : 'Not available';
-  qs('#modal-cover').style.backgroundImage = `url(${coverUrlFor(book)})`;
+  const modalCover = qs('#modal-cover');
+  modalCover.style.backgroundImage = '';
+  resolveCoverUrl(book).then((url) => {
+    modalCover.style.backgroundImage = `url(${url || LOCAL_PLACEHOLDER})`;
+  }).catch(() => {
+    modalCover.style.backgroundImage = `url(${LOCAL_PLACEHOLDER})`;
+  });
   qs('#modal-description').textContent = book.description || 'No description provided.';
   qs('#book-modal').classList.remove('hidden');
 }
@@ -1481,29 +1391,6 @@ function wireEvents() {
     const days = Number(e.target.value || 0);
     qs('#calc-result').value = (days * 10).toFixed(2);
   });
-  // Safety net: replace any placeholder images present/added later
-  const phHost = ['place','hold','.','co'].join('');
-  const scrubPlaceholders = (root = document) => {
-    const imgs = root.querySelectorAll('img');
-    imgs.forEach((img, i) => {
-      if (img.src && img.src.indexOf(phHost) >= 0) {
-        img.src = COVER_URLS[i % COVER_URLS.length];
-      }
-    });
-  };
-  scrubPlaceholders();
-  const mo = new MutationObserver((mut) => {
-    mut.forEach((m) => m.addedNodes.forEach((n) => {
-      if (n.nodeType === 1) {
-        if (n.tagName === 'IMG') {
-          if (n.src && n.src.indexOf(phHost) >= 0) n.src = COVER_URLS[0];
-        } else {
-          scrubPlaceholders(n);
-        }
-      }
-    }));
-  });
-  mo.observe(document.body, { childList: true, subtree: true });
 }
 
 async function bootstrapAfterAuth() {

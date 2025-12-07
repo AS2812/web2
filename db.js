@@ -5,6 +5,10 @@ const bcrypt = require('bcryptjs');
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'library.db');
 const db = new sqlite3.Database(DB_PATH);
 
+function normalizeIsbn(isbn) {
+  return String(isbn || '').replace(/[^0-9]/g, '');
+}
+
 function run(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function onRun(err) {
@@ -242,104 +246,94 @@ async function seed() {
     }
   }
 
-  // Authors
-  const authors = [
-    'Jane Austen',
-    'Agatha Christie',
-    'George Orwell',
-    'Isaac Asimov',
-    'Virginia Woolf',
-    'Haruki Murakami',
-    'Gabriel Garcia Marquez',
-    'Toni Morrison',
-    'J.K. Rowling',
-    'Stephen King',
-    'Neil Gaiman',
-    'Chimamanda Ngozi Adichie'
-  ];
-  const authorIds = [];
-  for (const name of authors) {
-    const res = await run(`INSERT INTO authors (name, bio) VALUES (?, ?)`, [name, `${name} bio`]);
-    authorIds.push(res.id);
-  }
-
-  // Publishers
-  const publishers = ['Penguin Books', 'HarperCollins', 'Random House', 'Hachette', 'Simon & Schuster'];
-  const publisherIds = [];
-  for (const [idx, name] of publishers.entries()) {
-    const res = await run(`INSERT INTO publishers (name, address) VALUES (?, ?)`, [
-      name,
-      `Address ${idx + 1}`
-    ]);
-    publisherIds.push(res.id);
-  }
-
-  // Books (popular real titles with correct ISBN and covers from Open Library)
+  // Books (popular titles with ISBN13 only; covers resolved at runtime via Google Books)
   // Drop existing rows to avoid FK constraint failures on reseed
   await run('DELETE FROM fines');
   await run('DELETE FROM reservations');
   await run('DELETE FROM loans');
   await run('DELETE FROM wrote');
   await run('DELETE FROM books');
+  await run('DELETE FROM authors');
+  await run('DELETE FROM publishers');
   const realBooks = [
-    { title: 'The Pillars of the Earth', author: 'Ken Follett', category: 'Historical Fiction', isbn: '9780385533225', cover: 'https://covers.openlibrary.org/b/isbn/9780385533225-M.jpg' },
-    { title: 'The Odyssey', author: 'Homer', category: 'Classic', isbn: '9780140449136', cover: 'https://covers.openlibrary.org/b/isbn/9780140449136-M.jpg' },
-    { title: 'The Help', author: 'Kathryn Stockett', category: 'Fiction', isbn: '9780307455925', cover: 'https://covers.openlibrary.org/b/isbn/9780307455925-M.jpg' },
-    { title: 'The Kite Runner', author: 'Khaled Hosseini', category: 'Fiction', isbn: '9780375507250', cover: 'https://covers.openlibrary.org/b/isbn/9780375507250-M.jpg' },
-    { title: 'The Lovely Bones', author: 'Alice Sebold', category: 'Fiction', isbn: '9780385721790', cover: 'https://covers.openlibrary.org/b/isbn/9780385721790-M.jpg' },
-    { title: 'Gone Girl', author: 'Gillian Flynn', category: 'Thriller', isbn: '9780593441190', cover: 'https://covers.openlibrary.org/b/isbn/9780593441190-M.jpg' },
-    { title: 'Dune', author: 'Frank Herbert', category: 'Science Fiction', isbn: '9780441013593', cover: 'https://covers.openlibrary.org/b/isbn/9780441013593-M.jpg' },
-    { title: 'The Night Circus', author: 'Erin Morgenstern', category: 'Fantasy', isbn: '9781250301703', cover: 'https://covers.openlibrary.org/b/isbn/9781250301703-M.jpg' },
-    { title: 'The Fifth Season', author: 'N. K. Jemisin', category: 'Fantasy', isbn: '9780765382030', cover: 'https://covers.openlibrary.org/b/isbn/9780765382030-M.jpg' },
-    { title: 'The Priory of the Orange Tree', author: 'Samantha Shannon', category: 'Fantasy', isbn: '9781635575569', cover: 'https://covers.openlibrary.org/b/isbn/9781635575569-M.jpg' },
-    { title: 'A Day of Fallen Night', author: 'Samantha Shannon', category: 'Fantasy', isbn: '9781635575583', cover: 'https://covers.openlibrary.org/b/isbn/9781635575583-M.jpg' },
-    { title: 'Mexican Gothic', author: 'Silvia Moreno-Garcia', category: 'Horror', isbn: '9781635575606', cover: 'https://covers.openlibrary.org/b/isbn/9781635575606-M.jpg' },
-    { title: 'Babel', author: 'R. F. Kuang', category: 'Fantasy', isbn: '9781635575620', cover: 'https://covers.openlibrary.org/b/isbn/9781635575620-M.jpg' },
-    { title: 'The Bone Season', author: 'Samantha Shannon', category: 'Fantasy', isbn: '9781635577990', cover: 'https://covers.openlibrary.org/b/isbn/9781635577990-M.jpg' },
-    { title: 'The Goldfinch', author: 'Donna Tartt', category: 'Fiction', isbn: '9780307742483', cover: 'https://covers.openlibrary.org/b/isbn/9780307742483-M.jpg' },
-    { title: 'The Invisible Life of Addie LaRue', author: 'V. E. Schwab', category: 'Fantasy', isbn: '9780063021433', cover: 'https://covers.openlibrary.org/b/isbn/9780063021433-M.jpg' },
-    { title: 'Project Hail Mary', author: 'Andy Weir', category: 'Science Fiction', isbn: '9780593550403', cover: 'https://covers.openlibrary.org/b/isbn/9780593550403-M.jpg' },
-    { title: 'Fourth Wing', author: 'Rebecca Yarros', category: 'Fantasy', isbn: '9781250872272', cover: 'https://covers.openlibrary.org/b/isbn/9781250872272-M.jpg' },
-    { title: 'The Shadow of the Wind', author: 'Carlos Ruiz Zafón', category: 'Mystery', isbn: '9780143127741', cover: 'https://covers.openlibrary.org/b/isbn/9780143127741-M.jpg' },
-    { title: 'Where the Crawdads Sing', author: 'Delia Owens', category: 'Fiction', isbn: '9781984801456', cover: 'https://covers.openlibrary.org/b/isbn/9781984801456-M.jpg' },
-    { title: 'The Silent Patient', author: 'Alex Michaelides', category: 'Thriller', isbn: '9780593972700', cover: 'https://covers.openlibrary.org/b/isbn/9780593972700-M.jpg' },
-    { title: 'The Night Watchman', author: 'Louise Erdrich', category: 'Fiction', isbn: '9780385548984', cover: 'https://covers.openlibrary.org/b/isbn/9780385548984-M.jpg' },
-    { title: 'The Midnight Library', author: 'Matt Haig', category: 'Fiction', isbn: '9781250328175', cover: 'https://covers.openlibrary.org/b/isbn/9781250328175-M.jpg' },
-    { title: 'Tomorrow, and Tomorrow, and Tomorrow', author: 'Gabrielle Zevin', category: 'Fiction', isbn: '9780593979419', cover: 'https://covers.openlibrary.org/b/isbn/9780593979419-M.jpg' },
-    { title: 'Lessons in Chemistry', author: 'Bonnie Garmus', category: 'Fiction', isbn: '9780593820247', cover: 'https://covers.openlibrary.org/b/isbn/9780593820247-M.jpg' },
-    { title: 'Educated', author: 'Tara Westover', category: 'Memoir', isbn: '9780062406682', cover: 'https://covers.openlibrary.org/b/isbn/9780062406682-M.jpg' },
-    { title: 'Circe', author: 'Madeline Miller', category: 'Fantasy', isbn: '9781250334886', cover: 'https://covers.openlibrary.org/b/isbn/9781250334886-M.jpg' },
-    { title: 'Remarkably Bright Creatures', author: 'Shelby Van Pelt', category: 'Fiction', isbn: '9780593595039', cover: 'https://covers.openlibrary.org/b/isbn/9780593595039-M.jpg' },
-    { title: 'The House in the Cerulean Sea', author: 'TJ Klune', category: 'Fantasy', isbn: '9780802158741', cover: 'https://covers.openlibrary.org/b/isbn/9780802158741-M.jpg' },
-    { title: 'The Seven Husbands of Evelyn Hugo', author: 'Taylor Jenkins Reid', category: 'Fiction', isbn: '9780593804728', cover: 'https://covers.openlibrary.org/b/isbn/9780593804728-M.jpg' },
-    { title: 'Pride and Prejudice', author: 'Jane Austen', category: 'Classic', isbn: '9780553212419', cover: 'https://covers.openlibrary.org/b/isbn/9780553212419-M.jpg' },
-    { title: 'Code Complete', author: 'Steve McConnell', category: 'Technology', isbn: '9780072263367', cover: 'https://covers.openlibrary.org/b/isbn/9780072263367-M.jpg' },
-    { title: 'Clean Code', author: 'Robert C. Martin', category: 'Technology', isbn: '9781449302399', cover: 'https://covers.openlibrary.org/b/isbn/9781449302399-M.jpg' },
-    { title: 'Automate the Boring Stuff with Python', author: 'Al Sweigart', category: 'Technology', isbn: '9781593273897', cover: 'https://covers.openlibrary.org/b/isbn/9781593273897-M.jpg' },
-    { title: 'True Grit', author: 'Charles Portis', category: 'Western', isbn: '9780679600116', cover: 'https://covers.openlibrary.org/b/isbn/9780679600116-M.jpg' },
-    { title: 'American Gods', author: 'Neil Gaiman', category: 'Fantasy', isbn: '9780140062866', cover: 'https://covers.openlibrary.org/b/isbn/9780140062866-M.jpg' },
-    { title: 'Wuthering Heights', author: 'Emily Brontë', category: 'Classic', isbn: '9781853262722', cover: 'https://covers.openlibrary.org/b/isbn/9781853262722-M.jpg' },
-    { title: 'The First 20 Minutes', author: 'Gretchen Reynolds', category: 'Health', isbn: '9781984832003', cover: 'https://covers.openlibrary.org/b/isbn/9781984832003-M.jpg' },
-    { title: 'Walden', author: 'Henry David Thoreau', category: 'Classic', isbn: '9780143037743', cover: 'https://covers.openlibrary.org/b/isbn/9780143037743-M.jpg' },
-    { title: 'The Girl on the Train', author: 'Paula Hawkins', category: 'Thriller', isbn: '9780804172448', cover: 'https://covers.openlibrary.org/b/isbn/9780804172448-M.jpg' }
+    { title: 'Dune', author: 'Frank Herbert', category: 'Science Fiction', isbn: '9780441172719', publicationDate: '1965-08-01' },
+    { title: 'Project Hail Mary', author: 'Andy Weir', category: 'Science Fiction', isbn: '9780593135204', publicationDate: '2021-05-04' },
+    { title: 'The Midnight Library', author: 'Matt Haig', category: 'Fiction', isbn: '9780525559474', publicationDate: '2020-09-29' },
+    { title: 'Fourth Wing', author: 'Rebecca Yarros', category: 'Fantasy', isbn: '9781649374080', publicationDate: '2023-04-01' },
+    { title: 'The Seven Husbands of Evelyn Hugo', author: 'Taylor Jenkins Reid', category: 'Fiction', isbn: '9781501161933', publicationDate: '2017-06-13' },
+    { title: 'The Night Circus', author: 'Erin Morgenstern', category: 'Fantasy', isbn: '9780385534635', publicationDate: '2011-09-13' },
+    { title: 'The Silent Patient', author: 'Alex Michaelides', category: 'Thriller', isbn: '9781250301697', publicationDate: '2019-02-05' },
+    { title: 'Where the Crawdads Sing', author: 'Delia Owens', category: 'Fiction', isbn: '9780735219090', publicationDate: '2018-08-14' },
+    { title: 'Pride and Prejudice', author: 'Jane Austen', category: 'Classic', isbn: '9780141439518', publicationDate: '1813-01-28' },
+    { title: 'Clean Code', author: 'Robert C. Martin', category: 'Technology', isbn: '9780132350884', publicationDate: '2008-08-11' },
+    { title: 'Atomic Habits', author: 'James Clear', category: 'Self Help', isbn: '9780735211292', publicationDate: '2018-10-16' },
+    { title: 'The Hobbit', author: 'J.R.R. Tolkien', category: 'Fantasy', isbn: '9780547928227', publicationDate: '1937-09-21' },
+    { title: 'The Name of the Wind', author: 'Patrick Rothfuss', category: 'Fantasy', isbn: '9780756404741', publicationDate: '2007-03-27' },
+    { title: "Harry Potter and the Sorcerer's Stone", author: 'J.K. Rowling', category: 'Fantasy', isbn: '9780590353427', publicationDate: '1998-09-01' },
+    { title: 'The Martian', author: 'Andy Weir', category: 'Science Fiction', isbn: '9780804139021', publicationDate: '2014-02-11' },
+    { title: 'A Court of Thorns and Roses', author: 'Sarah J. Maas', category: 'Fantasy', isbn: '9781619635180', publicationDate: '2015-05-05' },
+    { title: 'The Book Thief', author: 'Markus Zusak', category: 'Historical Fiction', isbn: '9780375842207', publicationDate: '2005-03-14' },
+    { title: '1984', author: 'George Orwell', category: 'Dystopian', isbn: '9780451524935', publicationDate: '1949-06-08' },
+    { title: 'The Alchemist', author: 'Paulo Coelho', category: 'Fiction', isbn: '9780061122415', publicationDate: '1993-05-01' },
+    { title: 'The Catcher in the Rye', author: 'J.D. Salinger', category: 'Classic', isbn: '9780316769488', publicationDate: '1951-07-16' },
+    { title: 'The Great Gatsby', author: 'F. Scott Fitzgerald', category: 'Classic', isbn: '9780743273565', publicationDate: '1925-04-10' },
+    { title: 'To Kill a Mockingbird', author: 'Harper Lee', category: 'Classic', isbn: '9780061120084', publicationDate: '1960-07-11' },
+    { title: 'The Fellowship of the Ring', author: 'J.R.R. Tolkien', category: 'Fantasy', isbn: '9780547928210', publicationDate: '1954-07-29' },
+    { title: 'The Hunger Games', author: 'Suzanne Collins', category: 'Young Adult', isbn: '9780439023528', publicationDate: '2008-09-14' },
+    { title: 'The Girl on the Train', author: 'Paula Hawkins', category: 'Thriller', isbn: '9781594634024', publicationDate: '2015-01-13' },
+    { title: 'Gone Girl', author: 'Gillian Flynn', category: 'Thriller', isbn: '9780307588371', publicationDate: '2012-06-05' },
+    { title: 'Educated', author: 'Tara Westover', category: 'Memoir', isbn: '9780399590504', publicationDate: '2018-02-20' },
+    { title: 'Becoming', author: 'Michelle Obama', category: 'Memoir', isbn: '9781524763138', publicationDate: '2018-11-13' },
+    { title: 'The Road', author: 'Cormac McCarthy', category: 'Post-Apocalyptic', isbn: '9780307387898', publicationDate: '2006-09-26' },
+    { title: 'Sapiens', author: 'Yuval Noah Harari', category: 'Nonfiction', isbn: '9780062316110', publicationDate: '2015-02-10' },
+    { title: 'A Game of Thrones', author: 'George R.R. Martin', category: 'Fantasy', isbn: '9780553593716', publicationDate: '1996-08-06' },
+    { title: 'The Lightning Thief', author: 'Rick Riordan', category: 'Fantasy', isbn: '9780786838653', publicationDate: '2005-06-28' },
+    { title: 'The Fault in Our Stars', author: 'John Green', category: 'Young Adult', isbn: '9780525478812', publicationDate: '2012-01-10' },
+    { title: 'The Kite Runner', author: 'Khaled Hosseini', category: 'Fiction', isbn: '9781594480003', publicationDate: '2003-05-29' },
+    { title: 'The Subtle Art of Not Giving a F*ck', author: 'Mark Manson', category: 'Self Help', isbn: '9780062457714', publicationDate: '2016-09-13' },
+    { title: 'Ready Player One', author: 'Ernest Cline', category: 'Science Fiction', isbn: '9780307887443', publicationDate: '2011-08-16' }
   ];
-  for (let i = 0; i < realBooks.length; i++) {
-    const b = realBooks[i];
-    const publicationDate = `20${(10 + (i % 15)).toString().padStart(2, '0')}-01-01`;
-    const copies = 3 + (i % 3);
-    const publisherId = publisherIds[i % publisherIds.length];
+  const publisherNames = ['Penguin Books', 'HarperCollins', 'Random House', 'Hachette', 'Simon & Schuster', 'Bloomsbury'];
+  const publisherIds = [];
+  for (const [idx, name] of publisherNames.entries()) {
+    const res = await run(`INSERT INTO publishers (name, address) VALUES (?, ?)`, [
+      name,
+      `Address ${idx + 1}`
+    ]);
+    publisherIds.push(res.id);
+  }
+  const authorIds = new Map();
+  for (const [idx, book] of realBooks.entries()) {
+    const normalizedIsbn = normalizeIsbn(book.isbn);
+    if (normalizedIsbn.length !== 13) {
+      throw new Error(`Invalid ISBN seed for "${book.title}": ${book.isbn}`);
+    }
+    let authorRow = authorIds.get(book.author);
+    if (!authorRow) {
+      const res = await run(`INSERT INTO authors (name, bio) VALUES (?, ?)`, [book.author, `${book.author} bio`]);
+      authorRow = { id: res.id };
+      authorIds.set(book.author, authorRow);
+    }
+    const publicationDate = book.publicationDate || '2000-01-01';
+    const copies = 3 + (Number(normalizedIsbn.slice(-1)) % 3);
+    const publisherId = publisherIds[idx % publisherIds.length];
     await run(
       `INSERT INTO books (isbn, title, author, category, publicationDate, copiesAvailable, totalCopies, publisherId, description, cover)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [b.isbn, b.title, b.author, b.category, publicationDate, copies, copies, publisherId, `${b.title} description`, b.cover]
+      [
+        normalizedIsbn,
+        book.title,
+        book.author,
+        book.category,
+        publicationDate,
+        copies,
+        copies,
+        publisherId,
+        `${book.title} by ${book.author}`,
+        null
+      ]
     );
-    // ensure author exists in authors table
-    let authorRow = await get(`SELECT id FROM authors WHERE name = ?`, [b.author]);
-    if (!authorRow) {
-      const res = await run(`INSERT INTO authors (name, bio) VALUES (?, ?)`, [b.author, `${b.author} bio`]);
-      authorRow = { id: res.id };
-    }
-    await run(`INSERT INTO wrote (isbn, authorId) VALUES (?, ?)`, [b.isbn, authorRow.id]);
+    await run(`INSERT INTO wrote (isbn, authorId) VALUES (?, ?)`, [normalizedIsbn, authorRow.id]);
   }
 
   // Sample loan, reservation, fine
@@ -366,19 +360,6 @@ async function seed() {
     );
   }
 
-  await ensureBookCovers();
-}
-
-async function ensureBookCovers() {
-  const rows = await all('SELECT rowid as idx, isbn, cover FROM books');
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const cleanIsbn = (row.isbn || '').replace(/[-\s]/g, '');
-    const cover = cleanIsbn ? `https://covers.openlibrary.org/b/isbn/${encodeURIComponent(cleanIsbn)}-M.jpg` : null;
-    if (cover) {
-      await run('UPDATE books SET cover = ? WHERE isbn = ?', [cover, row.isbn]);
-    }
-  }
 }
 
 module.exports = { db, run, get, all, init, seed };
