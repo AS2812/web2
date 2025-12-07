@@ -4,7 +4,8 @@
   "private": true,
   "description": "Plain JS Express server serving frontend and REST API for library management.",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+  "build": "echo \"no build step\""
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
