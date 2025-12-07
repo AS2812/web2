@@ -1,12 +1,13 @@
-FROM node:20-alpine AS base
+FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --production=false
+RUN npm ci --omit=dev
 
 COPY . .
+ENV NODE_ENV=production
+ENV DB_PATH=/data/library.db
+ENV PORT=8080
 
-RUN npm run build
-
-EXPOSE 3000
-CMD ["node", "dist/server.js"]
+EXPOSE 8080
+CMD ["npm", "start"]
