@@ -1,5 +1,5 @@
 app = "library-alexandria"
-primary_region = "iad"    # pick your region
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile"
