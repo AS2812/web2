@@ -122,7 +122,29 @@ router.delete('/:id', authMiddleware, requireRole('Admin'), async (req, res) => 
   const id = Number(req.params.id);
   const member = await get('SELECT * FROM members WHERE memberId = ?', [id]);
   if (!member) return sendError(res, 'Member not found', 'not_found', 404);
-  await run('DELETE FROM users WHERE id = ?', [member.userId]);
+  try {
+    await run('BEGIN TRANSACTION');
+
+    const loans = await all('SELECT loanId, isbn, returnDate FROM loans WHERE memberId = ?', [id]);
+    for (const loan of loans) {
+      if (!loan.returnDate) {
+        await run('UPDATE books SET copiesAvailable = copiesAvailable + 1 WHERE isbn = ?', [loan.isbn]);
+      }
+    }
+
+    await run('DELETE FROM payments WHERE memberId = ?', [id]);
+    await run('DELETE FROM fines WHERE memberId = ?', [id]);
+    await run('DELETE FROM reservations WHERE memberId = ?', [id]);
+    await run('DELETE FROM loans WHERE memberId = ?', [id]);
+    await run('DELETE FROM members WHERE memberId = ?', [id]);
+    await run('DELETE FROM users WHERE id = ?', [member.userId]);
+
+    await run('COMMIT');
+  } catch (err) {
+    await run('ROLLBACK').catch(() => {});
+    console.error('Failed to delete member', err);
+    return sendError(res, 'Unable to delete member. Clear related records and try again.', 'server_error', 500);
+  }
   return sendSuccess(res, member);
 });
 
