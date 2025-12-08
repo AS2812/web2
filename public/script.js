@@ -943,7 +943,11 @@ async function payFine(fineId, amount) {
     } else if (fineId) {
       await api(`/fines/${fineId}/pay`, { method: 'PATCH', body: JSON.stringify({}) });
     }
-    await Promise.all([fetchMemberFines(), fetchMemberLoans(), fetchAdminFines()]);
+    if (state.role === 'Admin') {
+      await Promise.all([fetchAdminFines(), fetchAdminStats()]);
+    } else {
+      await Promise.all([fetchMemberFines(), fetchMemberLoans()]);
+    }
     showMessage('Fine payment applied');
   } catch (err) { showMessage(err.message); }
 }
