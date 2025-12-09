@@ -1,8 +1,15 @@
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'library.db');
+const dbDir = path.dirname(DB_PATH);
+try {
+  fs.mkdirSync(dbDir, { recursive: true });
+} catch (_) {
+  // ignore mkdir errors; sqlite will throw if path is invalid
+}
 const db = new sqlite3.Database(DB_PATH);
 
 function normalizeIsbn(isbn) {

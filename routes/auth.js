@@ -51,7 +51,7 @@ async function sendResetEmail(email, token) {
   const resetLink = `${process.env.FRONTEND_URL || ''}/reset-password?token=${encodeURIComponent(token)}`;
   if (!nodemailer || !process.env.SMTP_USER) {
     console.log(`Password reset link for ${email}: ${resetLink}`);
-    return;
+    return { sent: false, token, link: resetLink };
   }
   const transporter = nodemailer.createTransport({
     service: process.env.SMTP_SERVICE || 'gmail',
@@ -71,9 +71,11 @@ async function sendResetEmail(email, token) {
   };
   try {
     await transporter.sendMail(message);
+    return { sent: true, token, link: resetLink };
   } catch (err) {
     console.warn('Email send failed, fallback to console log', err?.message);
     console.log(`Password reset link for ${email}: ${resetLink}`);
+    return { sent: false, token, link: resetLink };
   }
 }
 
@@ -191,8 +193,13 @@ router.post('/forgot', async (req, res) => {
     `INSERT INTO password_resets (tokenHash, userId, expiresAt, createdAt) VALUES (?, ?, ?, ?)`,
     [tokenHash, user.id, expires.toISOString(), now.toISOString()]
   );
-  await sendResetEmail(user.email, token);
-  return sendSuccess(res, { message: 'Password reset email sent' });
+  const info = await sendResetEmail(user.email, token);
+  const payload = { message: 'Password reset email sent' };
+  if (process.env.NODE_ENV === 'test' || !process.env.SMTP_USER) {
+    payload.token = token;
+    payload.link = info?.link;
+  }
+  return sendSuccess(res, payload);
 });
 
 router.post('/reset', async (req, res) => {
