@@ -12,7 +12,8 @@ const {
   normalizeEmail,
   normalizeText,
   normalizePhone,
-  newJti
+  newJti,
+  isValidPhone
 } = require('../utils');
 
 const router = express.Router();
@@ -88,6 +89,7 @@ router.post('/register', async (req, res) => {
   const normalizedUsername = normalizeText(username).toLowerCase();
   const normalizedFullName = normalizeText(name).toLowerCase();
   const normalizedPhone = normalizePhone(phone || null) || null;
+  if (normalizedPhone && !isValidPhone(normalizedPhone)) return sendError(res, 'Invalid phone number');
   try {
     const conflict = await get(
       `SELECT username, email, phone, fullName FROM users WHERE lower(username) = ? OR lower(email) = ? OR phone = ? OR lower(fullName) = ?`,

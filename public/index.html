@@ -22,12 +22,12 @@
       </div>
       <form id="signup-form" class="auth-form hidden">
         <div class="row two">
-          <input name="firstName" placeholder="First Name" required />
-          <input name="lastName" placeholder="Last Name" required />
-        </div>
-        <input name="username" placeholder="Username" required />
-        <input name="email" type="email" placeholder="Email" required />
-        <input name="phone" placeholder="Phone Number" />
+        <input name="firstName" placeholder="First Name" required />
+        <input name="lastName" placeholder="Last Name" required />
+      </div>
+      <input name="username" placeholder="Username" required />
+      <input name="email" type="email" placeholder="Email" required />
+      <input name="phone" type="tel" placeholder="Phone Number" pattern="\d{10,15}" title="Enter 10-15 digits" />
         <input type="password" name="password" placeholder="Password" required />
         <input type="password" name="confirmPassword" placeholder="Confirm Password" required />
         <button class="primary-btn" type="submit">Create an account</button>
@@ -162,7 +162,7 @@
         <form id="fine-pay-form" class="form-grid">
           <input name="firstName" placeholder="First Name" />
           <input name="lastName" placeholder="Last Name" />
-          <input name="phone" placeholder="Phone Number" />
+          <input name="phone" type="tel" placeholder="Phone Number" pattern="\d{10,15}" title="Enter 10-15 digits" />
           <input name="email" type="email" placeholder="Email" />
           <input id="fine-pay-amount" name="amount" placeholder="Amount to pay $" />
           <button class="primary-btn" type="submit">Confirm</button>
@@ -256,7 +256,7 @@
             <input name="name" placeholder="Full Name" required />
             <input name="username" placeholder="Username" required />
             <input name="email" type="email" placeholder="Email" required />
-            <input name="phone" placeholder="Phone" />
+            <input name="phone" type="tel" placeholder="Phone" pattern="\d{10,15}" title="Enter 10-15 digits" />
             <input name="address" placeholder="Address" />
             <input name="password" type="password" placeholder="Password" required />
             <button class="primary-btn" type="submit">Create Member</button>
@@ -294,7 +294,7 @@
           <input name="name" placeholder="Full Name" />
           <input name="username" placeholder="Username" />
           <input name="email" type="email" placeholder="Email" />
-          <input name="phone" placeholder="Phone" />
+          <input name="phone" type="tel" placeholder="Phone" pattern="\d{10,15}" title="Enter 10-15 digits" />
           <input name="address" placeholder="Address" />
           <button class="primary-btn" type="submit">Update Member</button>
         </form>

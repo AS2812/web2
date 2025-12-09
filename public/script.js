@@ -39,6 +39,12 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function isValidPhoneFront(phone) {
+  if (!phone) return true;
+  const digits = String(phone || '').replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15;
+}
+
 function showAuthForm(mode = 'signin') {
   const signup = qs('#signup-form');
   const signin = qs('#signin-form');
@@ -270,6 +276,11 @@ async function handleRegister(e) {
     showMessage('Password must be 8+ characters with letters and numbers');
     return;
   }
+  const phone = form.get('phone');
+  if (phone && !isValidPhoneFront(phone)) {
+    showMessage('Phone must be 10-15 digits');
+    return;
+  }
   try {
     const resp = await api('/auth/register', {
       method: 'POST',
@@ -278,7 +289,7 @@ async function handleRegister(e) {
         password: form.get('password'),
         email: (form.get('email') || '').trim(),
         name: `${form.get('firstName')} ${form.get('lastName')}`.trim(),
-        phone: form.get('phone') || ''
+        phone: phone || ''
       })
     });
     setToken(resp.token);
@@ -1123,6 +1134,10 @@ async function deleteBook(isbn) {
 async function addMember(e) {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target).entries());
+  if (data.phone && !isValidPhoneFront(data.phone)) {
+    showMessage('Phone must be 10-15 digits');
+    return;
+  }
   try {
     await api('/members', { method: 'POST', body: JSON.stringify({
       name: data.name,
@@ -1390,6 +1405,10 @@ function wireEvents() {
     };
     const memberId = qs('#admin-member-edit').value;
     if (!memberId) { showMessage('Select member to edit'); return; }
+    if (data.phone && !isValidPhoneFront(data.phone)) {
+      showMessage('Phone must be 10-15 digits');
+      return;
+    }
     try {
       await api(`/members/${memberId}`, {
         method: 'PUT',

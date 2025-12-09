@@ -34,6 +34,12 @@ function normalizePhone(phone) {
   return cleaned ? cleaned : null;
 }
 
+function isValidPhone(phone) {
+  if (!phone) return true; // optional in some flows
+  const digitsOnly = String(phone).replace(/\D/g, '');
+  return digitsOnly.length >= 10 && digitsOnly.length <= 15;
+}
+
 function sendSuccess(res, data, status = 200) {
   return res.status(status).json({ success: true, data, error: null });
 }
@@ -104,5 +110,6 @@ module.exports = {
   normalizeText,
   normalizePhone,
   newJti,
-  assertActiveSession
+  assertActiveSession,
+  isValidPhone
 };

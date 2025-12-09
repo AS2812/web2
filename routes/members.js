@@ -8,7 +8,8 @@ const {
   sendError,
   normalizeEmail,
   normalizeText,
-  normalizePhone
+  normalizePhone,
+  isValidPhone
 } = require('../utils');
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
@@ -85,6 +86,7 @@ router.post('/', authMiddleware, requireRole('Admin'), async (req, res) => {
   const normalizedUsername = normalizeText(username).toLowerCase();
   const normalizedFullName = normalizeText(name).toLowerCase();
   const normalizedPhone = normalizePhone(phone || null) || null;
+  if (normalizedPhone && !isValidPhone(normalizedPhone)) return sendError(res, 'Invalid phone number');
   const exists = await get(
     `SELECT id, username, email, phone, fullName FROM users WHERE lower(username) = ? OR lower(email) = ? OR phone = ? OR lower(fullName) = ?`,
     [normalizedUsername, normalizedEmail, normalizedPhone, normalizedFullName]
@@ -124,6 +126,7 @@ router.put('/:id', authMiddleware, requireRole('Admin'), async (req, res) => {
   const nextPhone = req.body.phone !== undefined ? normalizePhone(req.body.phone) : normalizePhone(user.phone);
   const nextName = req.body.name !== undefined ? normalizeText(req.body.name) : normalizeText(user.fullName);
   const nextUsername = req.body.username !== undefined ? normalizeText(req.body.username).toLowerCase() : user.username;
+  if (nextPhone && !isValidPhone(nextPhone)) return sendError(res, 'Invalid phone number');
   const conflict = await get(
     `SELECT id, email, phone, fullName, username FROM users WHERE id != ? AND (lower(email) = ? OR phone = ? OR lower(fullName) = ? OR lower(username) = ?)`,
     [user.id, normalizeEmail(nextEmail), nextPhone, normalizeText(nextName).toLowerCase(), nextUsername.toLowerCase()]

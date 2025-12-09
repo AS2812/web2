@@ -74,13 +74,19 @@ body { margin: 0; background: var(--bg); color: var(--text); }
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   min-height: 76px;
   justify-content: space-between;
 }
 .avatar { width: 48px; height: 48px; border-radius: 50%; background: #5668a4; display: grid; place-items: center; font-weight: 700; color: #fff; }
 .profile-info p { margin: 0; font-weight: 700; }
 .profile-info span { font-size: 12px; color: #c9d1e8; }
-.profile-card .secondary-btn { margin-left: auto; white-space: nowrap; }
+.profile-card .secondary-btn {
+  margin-left: auto;
+  white-space: nowrap;
+  min-width: 0;
+  padding: 8px 14px;
+}
 .content { padding: 18px; }
 .status-bar {
   background: #e8f1ff;
