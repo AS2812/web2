@@ -1,4 +1,4 @@
-app = "library-alex"
+app = "library-alex-fcds"
 primary_region = "iad"
 
 [build]
