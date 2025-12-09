@@ -49,7 +49,8 @@ async function start() {
   });
 }
 
-if (process.env.NODE_ENV !== 'test') {
+// Only auto-start when executed directly (not when imported by serverless runtimes)
+if (process.env.NODE_ENV !== 'test' && require.main === module) {
   start().catch((err) => {
     console.error('Failed to start server', err);
     process.exit(1);
