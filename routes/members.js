@@ -1,7 +1,16 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { all, get, run } = require('../db');
-const { authMiddleware, requireRole, sendSuccess, sendError } = require('../utils');
+const {
+  authMiddleware,
+  requireRole,
+  sendSuccess,
+  sendError,
+  normalizeEmail,
+  normalizeText,
+  normalizePhone
+} = require('../utils');
+const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
 const router = express.Router();
 
@@ -71,17 +80,30 @@ router.get('/:id/fines', authMiddleware, requireRole('Admin'), async (req, res) 
 router.post('/', authMiddleware, requireRole('Admin'), async (req, res) => {
   const { username, email, password, name, address, phone } = req.body || {};
   if (!username || !email || !password || !name) return sendError(res, 'username, email, password, and name are required');
-  const exists = await get('SELECT id FROM users WHERE username = ? OR email = ?', [username, email]);
-  if (exists) return sendError(res, 'User already exists', 'conflict', 409);
+  if (!PASSWORD_RULE.test(password || '')) return sendError(res, 'Invalid password: must be 8+ characters with letters and numbers');
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedUsername = normalizeText(username).toLowerCase();
+  const normalizedFullName = normalizeText(name).toLowerCase();
+  const normalizedPhone = normalizePhone(phone || null) || null;
+  const exists = await get(
+    `SELECT id, username, email, phone, fullName FROM users WHERE lower(username) = ? OR lower(email) = ? OR phone = ? OR lower(fullName) = ?`,
+    [normalizedUsername, normalizedEmail, normalizedPhone, normalizedFullName]
+  );
+  if (exists) {
+    if (exists.email && normalizeEmail(exists.email) === normalizedEmail) return sendError(res, 'Email is already registered', 'conflict', 409);
+    if (exists.phone && exists.phone === normalizedPhone) return sendError(res, 'Phone number is already registered', 'conflict', 409);
+    if (exists.fullName && normalizeText(exists.fullName).toLowerCase() === normalizedFullName) return sendError(res, 'Full name is already registered', 'conflict', 409);
+    return sendError(res, 'Username is already taken', 'conflict', 409);
+  }
 
   const passwordHash = await bcrypt.hash(password, 10);
   const userRes = await run(
     `INSERT INTO users (username, email, passwordHash, role, fullName, phone) VALUES (?, ?, ?, 'Member', ?, ?)`,
-    [username, email, passwordHash, name, phone || null]
+    [normalizedUsername, normalizedEmail, passwordHash, normalizeText(name), normalizedPhone]
   );
   const memberRes = await run(
     `INSERT INTO members (userId, name, address) VALUES (?, ?, ?)`,
-    [userRes.id, name, address || null]
+    [userRes.id, normalizeText(name), address ? normalizeText(address) : null]
   );
   const created = await get(
     `SELECT m.*, u.username, u.email, u.fullName, u.phone
@@ -97,16 +119,30 @@ router.put('/:id', authMiddleware, requireRole('Admin'), async (req, res) => {
   if (!member) return sendError(res, 'Member not found', 'not_found', 404);
   const user = await get('SELECT * FROM users WHERE id = ?', [member.userId]);
 
+  // prevent duplicates when updating email/phone/name
+  const nextEmail = req.body.email !== undefined ? normalizeEmail(req.body.email) : normalizeEmail(user.email);
+  const nextPhone = req.body.phone !== undefined ? normalizePhone(req.body.phone) : normalizePhone(user.phone);
+  const nextName = req.body.name !== undefined ? normalizeText(req.body.name) : normalizeText(user.fullName);
+  const conflict = await get(
+    `SELECT id, email, phone, fullName FROM users WHERE id != ? AND (lower(email) = ? OR phone = ? OR lower(fullName) = ?)`,
+    [user.id, normalizeEmail(nextEmail), nextPhone, normalizeText(nextName).toLowerCase()]
+  );
+  if (conflict) {
+    if (conflict.email && normalizeEmail(conflict.email) === normalizeEmail(nextEmail)) return sendError(res, 'Email is already registered', 'conflict', 409);
+    if (conflict.phone && conflict.phone === nextPhone) return sendError(res, 'Phone number is already registered', 'conflict', 409);
+    if (conflict.fullName && normalizeText(conflict.fullName).toLowerCase() === normalizeText(nextName).toLowerCase()) return sendError(res, 'Full name is already registered', 'conflict', 409);
+  }
+
   await run('UPDATE members SET name = ?, address = ? WHERE memberId = ?', [
-    req.body.name ?? member.name,
-    req.body.address ?? member.address,
+    req.body.name ? normalizeText(req.body.name) : member.name,
+    req.body.address ? normalizeText(req.body.address) : member.address,
     id
   ]);
 
   await run('UPDATE users SET fullName = ?, phone = ?, email = ? WHERE id = ?', [
-    req.body.name ?? user.fullName,
-    req.body.phone ?? user.phone,
-    req.body.email ?? user.email,
+    nextName,
+    nextPhone,
+    nextEmail,
     user.id
   ]);
 

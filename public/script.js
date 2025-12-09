@@ -35,6 +35,33 @@ function sanitizeIsbn(isbn) {
   return (isbn || '').replace(/[-\s]/g, '').trim();
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function showAuthForm(mode = 'signin') {
+  const signup = qs('#signup-form');
+  const signin = qs('#signin-form');
+  const forgot = qs('#forgot-form');
+  const tabs = qsa('.auth-tab');
+  if (mode === 'signup') {
+    signup?.classList.remove('hidden');
+    signin?.classList.add('hidden');
+    forgot?.classList.add('hidden');
+    tabs.forEach((t) => t.classList.toggle('active', t.id === 'tab-signup'));
+  } else if (mode === 'forgot') {
+    signup?.classList.add('hidden');
+    signin?.classList.add('hidden');
+    forgot?.classList.remove('hidden');
+    tabs.forEach((t) => t.classList.remove('active'));
+  } else {
+    signup?.classList.add('hidden');
+    signin?.classList.remove('hidden');
+    forgot?.classList.add('hidden');
+    tabs.forEach((t) => t.classList.toggle('active', t.id === 'tab-signin'));
+  }
+}
+
 function getCachedValue(map, storage, key) {
   if (!key) return undefined;
   if (map.has(key)) return map.get(key);
@@ -145,6 +172,7 @@ let adminBarChart = null;
 let adminPieChart = null;
 let memberChart = null;
 let modalBook = null;
+let heartbeatTimer = null;
 
 function setToken(token) {
   state.token = token;
@@ -185,10 +213,11 @@ async function api(path, options = {}) {
     // non-JSON response
   }
   if (res.status === 401 || res.status === 403) {
-    handleLogout();
-    sessionStorage.setItem('auth_msg', 'Session expired. Please sign in again.');
+    const msg = data?.error?.message || 'Session expired. Please sign in again.';
+    handleLogout(msg);
+    sessionStorage.setItem('auth_msg', msg);
     window.location.href = '/';
-    throw new Error('Unauthorized');
+    throw new Error(msg);
   }
   if (!res.ok || (data && data.success === false)) {
     throw new Error(data?.error?.message || res.statusText || 'Request failed');
@@ -213,7 +242,8 @@ async function handleLogin(e) {
       method: 'POST',
       body: JSON.stringify({
         username: form.get('username').trim(),
-        password: form.get('password')
+        password: form.get('password'),
+        remember: form.get('remember') === 'on'
       })
     });
     setToken(resp.token);
@@ -236,12 +266,17 @@ async function handleRegister(e) {
     showMessage('Passwords do not match');
     return;
   }
+  if (!/^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(form.get('password') || '')) {
+    showMessage('Password must be 8+ characters with letters and numbers');
+    return;
+  }
   try {
     const resp = await api('/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         username: form.get('username').trim(),
         password: form.get('password'),
+        email: (form.get('email') || '').trim(),
         name: `${form.get('firstName')} ${form.get('lastName')}`.trim(),
         phone: form.get('phone') || ''
       })
@@ -251,6 +286,34 @@ async function handleRegister(e) {
   } catch (err) {
     showMessage(err.message);
   }
+}
+
+async function handleForgotSend(e) {
+  e.preventDefault();
+  const form = qs('#forgot-form');
+  const email = form?.elements.email?.value?.trim();
+  if (!email) { showMessage('Enter your email'); return; }
+  try {
+    await api('/auth/forgot', { method: 'POST', body: JSON.stringify({ email }) });
+    showMessage('Reset link sent. Check your email.');
+  } catch (err) { showMessage(err.message); }
+}
+
+async function handleForgotSubmit(e) {
+  e.preventDefault();
+  const form = new FormData(e.target);
+  const token = form.get('token')?.trim();
+  const password = form.get('newPassword');
+  if (!token || !password) { showMessage('Token and new password required'); return; }
+  if (!/^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(password)) {
+    showMessage('Password must be 8+ characters with letters and numbers');
+    return;
+  }
+  try {
+    await api('/auth/reset', { method: 'POST', body: JSON.stringify({ token, password }) });
+    showMessage('Password reset. Please sign in.');
+    showAuthForm('signin');
+  } catch (err) { showMessage(err.message); }
 }
 
 function handleLogout(message) {
@@ -266,6 +329,10 @@ function handleLogout(message) {
   syncAuthUI();
   setRoleUI();
   if (message) sessionStorage.setItem('auth_msg', message);
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
 }
 
 // Fetchers
@@ -990,6 +1057,26 @@ async function addBook(e) {
     if (errorEl) errorEl.textContent = validation.msg;
     return;
   }
+   const today = new Date();
+   if (data.publicationDate) {
+     const d = new Date(data.publicationDate);
+     if (d < new Date(today.toDateString())) {
+       showMessage('Publication date cannot be in the past');
+       return;
+     }
+   }
+  const normalizedIsbn = sanitizeIsbn(data.isbn);
+  const normalizedTitle = (data.title || '').trim().toLowerCase();
+  const normalizedCover = (data.cover || '').trim().toLowerCase();
+  const dup = state.books.find((b) =>
+    sanitizeIsbn(b.isbn) === normalizedIsbn ||
+    (b.title || '').trim().toLowerCase() === normalizedTitle ||
+    (b.cover || '').trim().toLowerCase() === normalizedCover
+  );
+  if (dup) {
+    showMessage('Duplicate book (ISBN/title/cover)');
+    return;
+  }
   const payload = {
     title: data.title,
     isbn: data.isbn,
@@ -1211,14 +1298,19 @@ function handleSearchBooks(e) {
 }
 
 function wireEvents() {
+  qsa('input[type="date"]').forEach((el) => { el.min = todayIso(); });
   qs('#signin-form').addEventListener('submit', handleLogin);
   qs('#signup-form').addEventListener('submit', handleRegister);
+  const forgotLink = qs('#forgot-link');
+  const backToLogin = qs('#back-to-login');
+  const forgotSend = qs('#forgot-send');
+  qs('#forgot-form').addEventListener('submit', handleForgotSubmit);
+  if (forgotSend) forgotSend.addEventListener('click', handleForgotSend);
+  if (forgotLink) forgotLink.addEventListener('click', (e) => { e.preventDefault(); showAuthForm('forgot'); });
+  if (backToLogin) backToLogin.addEventListener('click', (e) => { e.preventDefault(); showAuthForm('signin'); });
   qsa('.auth-tab').forEach((tab) => tab.addEventListener('click', () => {
-    qsa('.auth-tab').forEach((t) => t.classList.remove('active'));
-    tab.classList.add('active');
     const isSignIn = tab.id === 'tab-signin';
-    qs('#signin-form').classList.toggle('hidden', !isSignIn);
-    qs('#signup-form').classList.toggle('hidden', isSignIn);
+    showAuthForm(isSignIn ? 'signin' : 'signup');
     showMessage(isSignIn ? 'Sign in' : 'Sign up');
   }));
   qs('#logout-btn').addEventListener('click', () => handleLogout());
@@ -1397,10 +1489,27 @@ function wireEvents() {
   });
 }
 
+function startHeartbeat() {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  if (!state.token) return;
+  heartbeatTimer = setInterval(async () => {
+    try {
+      await api('/auth/me');
+    } catch (err) {
+      // api will handle logout and redirect
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    }
+  }, 30000);
+}
+
 async function bootstrapAfterAuth() {
   syncAuthUI();
   await fetchProfile();
   setRoleUI();
+  startHeartbeat();
   if (state.role === 'Admin') {
     await Promise.all([
       fetchBooks(),

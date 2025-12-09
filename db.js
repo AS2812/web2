@@ -38,6 +38,7 @@ function all(sql, params = []) {
 
 async function init() {
   await run('PRAGMA foreign_keys = ON');
+  await run('PRAGMA journal_mode = WAL');
 
   await run(`
     CREATE TABLE IF NOT EXISTS users (
@@ -50,6 +51,10 @@ async function init() {
       phone TEXT
     )
   `);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_ci ON users(lower(username))`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_ci ON users(lower(email))`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone)`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_fullname_ci ON users(lower(fullName))`);
 
   await run(`
     CREATE TABLE IF NOT EXISTS members (
@@ -103,6 +108,9 @@ async function init() {
   `);
   // add author column if missing
   await run(`ALTER TABLE books ADD COLUMN author TEXT`, []).catch(() => {});
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn)`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_books_title_ci ON books(lower(title))`);
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_books_cover_ci ON books(lower(cover))`);
 
   await run(`
     CREATE TABLE IF NOT EXISTS wrote (
@@ -179,6 +187,29 @@ async function init() {
       payerId INTEGER,
       allocations TEXT NOT NULL,
       FOREIGN KEY(memberId) REFERENCES members(memberId)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      jti TEXT PRIMARY KEY,
+      userId INTEGER NOT NULL,
+      expiresAt TEXT NOT NULL,
+      lastActive TEXT NOT NULL,
+      rememberMe INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS password_resets (
+      tokenHash TEXT PRIMARY KEY,
+      userId INTEGER NOT NULL,
+      expiresAt TEXT NOT NULL,
+      usedAt TEXT,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
 }

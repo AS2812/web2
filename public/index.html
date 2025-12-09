@@ -26,6 +26,7 @@
           <input name="lastName" placeholder="Last Name" required />
         </div>
         <input name="username" placeholder="Username" required />
+        <input name="email" type="email" placeholder="Email" required />
         <input name="phone" placeholder="Phone Number" />
         <input type="password" name="password" placeholder="Password" required />
         <input type="password" name="confirmPassword" placeholder="Confirm Password" required />
@@ -36,10 +37,20 @@
         <input type="password" name="password" placeholder="Password" required />
         <div class="row between small">
           <label><input type="checkbox" name="remember" /> Remember me</label>
-          <a class="muted" href="#">Forgot password?</a>
+          <a id="forgot-link" class="muted" href="#">Forgot password?</a>
         </div>
         <div id="signin-error" class="muted small hidden" style="color:#c84f4f;"></div>
         <button class="primary-btn" type="submit">Sign in</button>
+      </form>
+      <form id="forgot-form" class="auth-form hidden">
+        <input name="email" type="email" placeholder="Account email" required />
+        <input name="token" placeholder="Reset token (from email)" />
+        <input type="password" name="newPassword" placeholder="New password" />
+        <div class="row between small">
+          <button id="forgot-send" class="secondary-btn" type="button">Send reset link</button>
+          <a id="back-to-login" class="muted" href="#">Back to login</a>
+        </div>
+        <button class="primary-btn" type="submit">Reset Password</button>
       </form>
     </div>
   </div>

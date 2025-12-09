@@ -1,6 +1,6 @@
 const express = require('express');
 const { all, get, run } = require('../db');
-const { authMiddleware, requireRole, sendSuccess, sendError } = require('../utils');
+const { authMiddleware, requireRole, sendSuccess, sendError, normalizeText } = require('../utils');
 
 const router = express.Router();
 
@@ -57,17 +57,32 @@ router.post('/', authMiddleware, requireRole('Admin'), async (req, res) => {
   if (!isbn || !title) return sendError(res, 'isbn and title are required');
   const normalizedIsbn = normalizeIsbn(isbn);
   if (normalizedIsbn.length !== 13) return sendError(res, 'ISBN must be a 13-digit number string');
-  const exists = await get('SELECT isbn FROM books WHERE isbn = ?', [normalizedIsbn]);
-  if (exists) return sendError(res, 'Book already exists', 'conflict', 409);
+  const normalizedTitle = normalizeText(title).toLowerCase();
+  const coverUrl =
+    typeof cover === 'string' && /^https?:\/\//i.test(cover) ? cover.replace(/^http:/i, 'https:').trim() : null;
+  if (publicationDate) {
+    const today = new Date();
+    const pub = new Date(publicationDate);
+    if (pub < new Date(today.toDateString())) return sendError(res, 'Publication date cannot be in the past');
+  }
+  const exists = await get(
+    'SELECT isbn, title, cover FROM books WHERE isbn = ? OR lower(title) = ? OR (cover IS NOT NULL AND lower(cover) = ?)',
+    [normalizedIsbn, normalizedTitle, coverUrl ? coverUrl.toLowerCase() : null]
+  );
+  if (exists) {
+    if (exists.isbn === normalizedIsbn) return sendError(res, 'Book with this ISBN already exists', 'conflict', 409);
+    if (exists.title && normalizeText(exists.title).toLowerCase() === normalizedTitle)
+      return sendError(res, 'Book title already exists', 'conflict', 409);
+    if (coverUrl && exists.cover && exists.cover.toLowerCase() === coverUrl.toLowerCase())
+      return sendError(res, 'Cover URL already used', 'conflict', 409);
+  }
   try {
-    const coverUrl =
-      typeof cover === 'string' && /^https?:\/\//i.test(cover) ? cover.replace(/^http:/i, 'https:') : null;
     await run(
       `INSERT INTO books (isbn, title, category, publicationDate, copiesAvailable, totalCopies, publisherId, description, cover)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         normalizedIsbn,
-        title,
+        normalizeText(title),
         category || null,
         publicationDate || null,
         copiesAvailable ?? totalCopies ?? 1,
@@ -108,12 +123,32 @@ router.put('/:isbn', authMiddleware, requireRole('Admin'), async (req, res) => {
       : req.body.cover === null
       ? null
       : book.cover;
+  const nextTitle = req.body.title ? normalizeText(req.body.title) : book.title;
+  if (nextTitle) {
+    const conflict = await get(
+      `SELECT isbn FROM books WHERE lower(title) = ? AND isbn != ?`,
+      [normalizeText(nextTitle).toLowerCase(), isbn]
+    );
+    if (conflict) return sendError(res, 'Book title already exists', 'conflict', 409);
+  }
+  if (coverUrl) {
+    const conflictCover = await get(
+      `SELECT isbn FROM books WHERE cover IS NOT NULL AND lower(cover) = ? AND isbn != ?`,
+      [coverUrl.toLowerCase(), isbn]
+    );
+    if (conflictCover) return sendError(res, 'Cover URL already used', 'conflict', 409);
+  }
+  if (req.body.publicationDate) {
+    const today = new Date();
+    const pub = new Date(req.body.publicationDate);
+    if (pub < new Date(today.toDateString())) return sendError(res, 'Publication date cannot be in the past');
+  }
   await run(
     `UPDATE books SET
       title = ?, category = ?, publicationDate = ?, copiesAvailable = ?, totalCopies = ?, publisherId = ?, description = ?, cover = ?
      WHERE isbn = ?`,
     [
-      req.body.title ?? book.title,
+      nextTitle,
       req.body.category ?? book.category,
       req.body.publicationDate ?? book.publicationDate,
       nextCopies,
