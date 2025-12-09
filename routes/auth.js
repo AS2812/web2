@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+require('dotenv').config();
 let nodemailer = null;
 try { nodemailer = require('nodemailer'); } catch (_) { nodemailer = null; }
 const { get, run } = require('../db');
@@ -49,32 +50,104 @@ async function createSession(userId, remember) {
 
 async function sendResetEmail(email, token) {
   const resetLink = `${process.env.FRONTEND_URL || ''}/reset-password?token=${encodeURIComponent(token)}`;
-  if (!nodemailer || !process.env.SMTP_USER) {
-    console.log(`Password reset link for ${email}: ${resetLink}`);
+  
+  // Check if nodemailer is available
+  if (!nodemailer) {
+    console.log('⚠️  Nodemailer not installed - using console fallback');
+    console.log(`📧 Password reset link for ${email}: ${resetLink}`);
     return { sent: false, token, link: resetLink };
   }
-  const transporter = nodemailer.createTransport({
+  
+  // Check if SMTP is configured
+  if (!process.env.SMTP_USER) {
+    console.log('⚠️  SMTP_USER not configured - using console fallback');
+    console.log(`📧 Password reset link for ${email}: ${resetLink}`);
+    return { sent: false, token, link: resetLink };
+  }
+  
+  if (!process.env.SMTP_PASS) {
+    console.log('⚠️  SMTP_PASS not configured - using console fallback');
+    console.log(`📧 Password reset link for ${email}: ${resetLink}`);
+    return { sent: false, token, link: resetLink };
+  }
+  
+  // Log SMTP configuration (without sensitive data)
+  const smtpConfig = {
     service: process.env.SMTP_SERVICE || 'gmail',
-    host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined,
+    port: 587,
     secure: false,
-    auth: process.env.SMTP_USER
-      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-      : undefined
+    user: process.env.SMTP_USER,
+    from: process.env.SMTP_FROM || process.env.SMTP_USER 
+  };
+  
+  console.log('📤 SMTP Configuration:', {
+    service: smtpConfig.service,
+    port: smtpConfig.port,
+    secure: smtpConfig.secure,
+    user: smtpConfig.user,
+    from: smtpConfig.from
   });
+  
+  const transporter = nodemailer.createTransport({
+    service: smtpConfig.service,
+    port: smtpConfig.port,
+    secure: smtpConfig.secure,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+  
+  // Verify SMTP connection
+  try {
+    console.log('🔌 Testing SMTP connection...');
+    await transporter.verify();
+    console.log('✅ SMTP connection verified successfully');
+  } catch (verifyErr) {
+    console.error('❌ SMTP connection verification failed:', verifyErr.message);
+    console.error('   Error code:', verifyErr.code);
+    console.error('   Full error:', verifyErr);
+    console.log(`📧 Fallback: Password reset link for ${email}: ${resetLink}`);
+    return { sent: false, token, link: resetLink };
+  }
+  
   const message = {
-    from: process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@example.com',
+    from: smtpConfig.from,
     to: email,
     subject: 'Password reset',
     text: `Use this link to reset your password: ${resetLink}`,
     html: `<p>Use this link to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p>`
   };
+  
+  console.log('📨 Sending password reset email...');
+  console.log('   To:', email);
+  console.log('   From:', message.from);
+  console.log('   Subject:', message.subject);
+  
   try {
-    await transporter.sendMail(message);
+    const info = await transporter.sendMail(message);
+    console.log('✅ Email sent successfully!');
+    console.log('   Message ID:', info.messageId);
+    console.log('   Response:', info.response);
     return { sent: true, token, link: resetLink };
   } catch (err) {
-    console.warn('Email send failed, fallback to console log', err?.message);
-    console.log(`Password reset link for ${email}: ${resetLink}`);
+    console.error('❌ Email send failed:');
+    console.error('   Error message:', err.message);
+    console.error('   Error code:', err.code);
+    console.error('   Command:', err.command);
+    
+    // Log specific error details
+    if (err.code === 'EAUTH') {
+      console.error('   ⚠️  Authentication failed - check SMTP_USER and SMTP_PASS');
+      console.error('   ⚠️  For Gmail, you need an App Password (not your regular password)');
+    } else if (err.code === 'ESOCKET') {
+      console.error('   ⚠️  Connection failed - check network/firewall settings');
+    } else if (err.code === 'ETIMEDOUT') {
+      console.error('   ⚠️  Connection timeout - SMTP server may be unreachable');
+    }
+    
+    console.error('   Full error:', err);
+    console.log(`📧 Fallback: Password reset link for ${email}: ${resetLink}`);
     return { sent: false, token, link: resetLink };
   }
 }
