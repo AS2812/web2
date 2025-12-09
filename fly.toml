@@ -1,4 +1,4 @@
-app = "library-alexandria"
+app = "library-alex"
 primary_region = "iad"
 
 [build]
