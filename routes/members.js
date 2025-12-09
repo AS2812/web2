@@ -123,14 +123,16 @@ router.put('/:id', authMiddleware, requireRole('Admin'), async (req, res) => {
   const nextEmail = req.body.email !== undefined ? normalizeEmail(req.body.email) : normalizeEmail(user.email);
   const nextPhone = req.body.phone !== undefined ? normalizePhone(req.body.phone) : normalizePhone(user.phone);
   const nextName = req.body.name !== undefined ? normalizeText(req.body.name) : normalizeText(user.fullName);
+  const nextUsername = req.body.username !== undefined ? normalizeText(req.body.username).toLowerCase() : user.username;
   const conflict = await get(
-    `SELECT id, email, phone, fullName FROM users WHERE id != ? AND (lower(email) = ? OR phone = ? OR lower(fullName) = ?)`,
-    [user.id, normalizeEmail(nextEmail), nextPhone, normalizeText(nextName).toLowerCase()]
+    `SELECT id, email, phone, fullName, username FROM users WHERE id != ? AND (lower(email) = ? OR phone = ? OR lower(fullName) = ? OR lower(username) = ?)`,
+    [user.id, normalizeEmail(nextEmail), nextPhone, normalizeText(nextName).toLowerCase(), nextUsername.toLowerCase()]
   );
   if (conflict) {
     if (conflict.email && normalizeEmail(conflict.email) === normalizeEmail(nextEmail)) return sendError(res, 'Email is already registered', 'conflict', 409);
     if (conflict.phone && conflict.phone === nextPhone) return sendError(res, 'Phone number is already registered', 'conflict', 409);
     if (conflict.fullName && normalizeText(conflict.fullName).toLowerCase() === normalizeText(nextName).toLowerCase()) return sendError(res, 'Full name is already registered', 'conflict', 409);
+    if (conflict.username && normalizeText(conflict.username).toLowerCase() === nextUsername.toLowerCase()) return sendError(res, 'Username is already taken', 'conflict', 409);
   }
 
   await run('UPDATE members SET name = ?, address = ? WHERE memberId = ?', [
@@ -139,10 +141,11 @@ router.put('/:id', authMiddleware, requireRole('Admin'), async (req, res) => {
     id
   ]);
 
-  await run('UPDATE users SET fullName = ?, phone = ?, email = ? WHERE id = ?', [
+  await run('UPDATE users SET fullName = ?, phone = ?, email = ?, username = ? WHERE id = ?', [
     nextName,
     nextPhone,
     nextEmail,
+    nextUsername,
     user.id
   ]);
 

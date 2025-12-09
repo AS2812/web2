@@ -1380,16 +1380,25 @@ function wireEvents() {
   qs('#admin-member-form').addEventListener('submit', addMember);
   qs('#admin-member-edit-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target).entries());
+    const raw = Object.fromEntries(new FormData(e.target).entries());
+    const data = {
+      name: raw.name?.trim() || undefined,
+      username: raw.username?.trim() || undefined,
+      email: raw.email?.trim() || undefined,
+      phone: raw.phone?.trim() || undefined,
+      address: raw.address?.trim() || undefined
+    };
     const memberId = qs('#admin-member-edit').value;
     if (!memberId) { showMessage('Select member to edit'); return; }
     try {
       await api(`/members/${memberId}`, {
         method: 'PUT',
         body: JSON.stringify({
-          name: data.name || undefined,
-          phone: data.phone || undefined,
-          address: data.address || undefined
+          name: data.name,
+          username: data.username,
+          email: data.email,
+          phone: data.phone,
+          address: data.address
         })
       });
       e.target.reset();
