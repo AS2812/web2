@@ -8,3 +8,6 @@ tmp
 npm-debug.log*
 pnpm-debug.log*
 yarn-error.log*
+
+# Local Netlify folder
+.netlify
