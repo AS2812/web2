@@ -1492,7 +1492,7 @@ function wireEvents() {
 function startHeartbeat() {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   if (!state.token) return;
-  heartbeatTimer = setInterval(async () => {
+  const ping = async () => {
     try {
       await api('/auth/me');
     } catch (err) {
@@ -1502,7 +1502,13 @@ function startHeartbeat() {
         heartbeatTimer = null;
       }
     }
-  }, 30000);
+  };
+  heartbeatTimer = setInterval(ping, 5000);
+  // also ping immediately on regain focus for faster invalidation
+  document.addEventListener('visibilitychange', () => {
+    if (!state.token) return;
+    if (!document.hidden) ping();
+  });
 }
 
 async function bootstrapAfterAuth() {
